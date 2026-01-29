@@ -1,51 +1,41 @@
 # DeepSeek Agent for OpenHands
 
-Minimal Cloudflare Worker that integrates DeepSeek with OpenHands for bidirectional monitoring.
+**Simple transfer agent**: Gets OpenHands conversation, sends to DeepSeek, returns DeepSeek's response.
 
 ## What it does
 
-1. **Shared context**: Both OpenHands and DeepSeek see the same task
-2. **DeepSeek monitoring**: DeepSeek gets additional rules for monitoring
-3. **Automatic actions**: DeepSeek can stop OpenHands or call any OpenHands API
-4. **Bidirectional**: OpenHands events are forwarded to DeepSeek for analysis
+1. **Simple transfer**: One endpoint that does everything
+2. **Get OpenHands info**: Fetches conversation details and last response
+3. **Send to DeepSeek**: Sends everything to DeepSeek for analysis
+4. **Execute actions**: DeepSeek can stop OpenHands or call APIs
+5. **Return response**: Returns DeepSeek's analysis for you to use
 
-## API Endpoints
+## API Endpoint
 
-### 1. `POST /start`
-Start everything in one flow.
-
-```json
-{
-  "conversation_id": "your-id",
-  "task": "Shared task for OpenHands",
-  "rules": "Rules for DeepSeek monitoring"
-}
-```
-
-**Response:**
-- Starts OpenHands conversation
-- Asks DeepSeek for initial plan
-- Executes any actions DeepSeek specifies
-- Returns results
-
-### 2. `POST /events`
-Forward OpenHands events to DeepSeek.
+### `POST /start`
+Simple transfer endpoint.
 
 ```json
 {
-  "conversation_id": "your-id",
-  "event": {
-    "type": "code_written",
-    "content": "const x = 5;",
-    "source": "agent"
-  }
+  "conversation_id": "your-openhands-id",
+  "first_prompt": "Task and rules for DeepSeek"
 }
 ```
 
-**Response:**
-- DeepSeek analyzes the event
-- Executes STOP or endpoint calls automatically
-- Returns results
+**What happens:**
+1. Gets OpenHands conversation info
+2. Sends to DeepSeek with your `first_prompt`
+3. DeepSeek analyzes and can:
+   - Stop OpenHands if needed
+   - Call OpenHands APIs
+   - Return analysis/feedback
+4. Returns DeepSeek's response
+
+**Response includes:**
+- OpenHands conversation info
+- Last response from OpenHands
+- DeepSeek's analysis
+- Any actions taken (STOP, API calls)
 
 ## DeepSeek Communication Format
 
@@ -89,87 +79,45 @@ DeepSeek uses these exact formats:
 ## Test
 
 ```bash
-# Start monitoring
-curl -X POST http://localhost:8787/start \
-  -H "Content-Type: application/json" \
-  -d '{
-    "conversation_id": "test-123",
-    "task": "Create a simple web server",
-    "rules": "Monitor for security issues. Stop if insecure code."
-  }'
-
-# Forward an event
-curl -X POST http://localhost:8787/events \
-  -H "Content-Type: application/json" \
-  -d '{
-    "conversation_id": "test-123",
-    "event": {
-      "type": "code_written",
-      "content": "const password = process.env.PASSWORD;",
-      "source": "agent"
-    }
-  }'
-```
-
-## Manual Event Forwarding
-
-Since OpenHands doesn't automatically send events to external services, you need to manually forward events:
-
-### Option 1: Use the Python script
-```bash
-# Edit test_manual_events.py with your conversation ID
-python test_manual_events.py
-```
-
-### Option 2: Manual curl commands
-1. **Start monitoring an existing conversation:**
-```bash
+# Simple test
 curl -X POST https://deepseek-agent.alghamdimo89.workers.dev/start \
   -H "Content-Type: application/json" \
   -d '{
-    "conversation_id": "YOUR_OPENHANDS_ID",
-    "task": "Task description",
-    "rules": "Monitoring rules"
+    "conversation_id": "your-openhands-id",
+    "first_prompt": "Task: Create web server. Rules: Monitor for security issues."
   }'
 ```
 
-2. **When OpenHands does something, forward the event:**
+Or use the test script:
 ```bash
-curl -X POST https://deepseek-agent.alghamdimo89.workers.dev/events \
-  -H "Content-Type: application/json" \
-  -d '{
-    "conversation_id": "YOUR_OPENHANDS_ID",
-    "event": {
-      "type": "code_written",
-      "content": "Code that OpenHands wrote",
-      "source": "agent"
-    }
-  }'
+chmod +x test_simple.sh
+./test_simple.sh
 ```
 
-### Option 3: Automate with browser extension
-You could create a browser extension that:
-1. Listens to OpenHands events in the browser
-2. Automatically forwards them to the DeepSeek agent
-3. Shows DeepSeek's responses
+## How to Use
 
-## Event Types to Forward
-
-Forward these OpenHands events:
-- `code_written` - When agent writes code
-- `command_executed` - When agent runs commands
-- `file_created` - When agent creates files
-- `git_operation` - When agent uses git
-- `error` - When agent encounters errors
-- `user_message` - User messages to agent
-- `agent_response` - Agent responses to user
+1. **Create OpenHands conversation** (in OpenHands UI)
+2. **Write your prompt** in OpenHands UI
+3. **Get OpenHands response**
+4. **Call DeepSeek agent:**
+   ```bash
+   curl -X POST https://deepseek-agent.alghamdimo89.workers.dev/start \
+     -H "Content-Type: application/json" \
+     -d '{
+       "conversation_id": "YOUR_ID",
+       "first_prompt": "Task and rules for DeepSeek"
+     }'
+   ```
+5. **Get DeepSeek's response** in the API response
+6. **Copy DeepSeek's response** to OpenHands if needed
 
 ## Files
 
-- `src/index.ts` - Main Cloudflare Worker (only 150 lines)
+- `src/index.ts` - Main Cloudflare Worker (simple 150-line implementation)
 - `package.json` - Minimal dependencies
 - `wrangler.toml` - Cloudflare config with DeepSeek API key
-- `test.sh` - Simple test commands
+- `test_simple.sh` - Simple test script
+- `test_manual_events.py` - Python script for manual testing
 
 ## License
 

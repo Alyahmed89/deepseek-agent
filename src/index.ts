@@ -1,61 +1,85 @@
 // Minimal DeepSeek Agent for OpenHands
-// Simple transfer: Get OpenHands conversation, send to DeepSeek, return response
+// Simple transfer: Create OpenHands conversation with initial message, send to DeepSeek, return response
 
 import { Hono } from 'hono'
 
+interface CloudflareBindings {
+  DEEPSEEK_API_KEY: string
+  OPENHANDS_API_URL: string
+}
+
 const app = new Hono<{ Bindings: CloudflareBindings }>()
+
+// Root endpoint
+app.get('/', (c) => {
+  return c.json({ message: 'DeepSeek Agent for OpenHands', endpoints: ['POST /start'] })
+})
 
 // Simple transfer endpoint
 app.post('/start', async (c) => {
   try {
-    const { conversation_id, first_prompt } = await c.req.json()
+    const { repository, branch, first_prompt } = await c.req.json()
     
-    if (!conversation_id || !first_prompt) {
-      return c.json({ error: 'Need conversation_id and first_prompt' }, 400)
+    if (!repository || !first_prompt) {
+      return c.json({ error: 'Need repository and first_prompt (branch is optional)' }, 400)
     }
 
-    // 1. Get OpenHands conversation info
-    let openhandsInfo = {}
-    let lastResponse = null
+    // 1. Create OpenHands conversation with initial_user_msg
+    let openhandsInfo: { status: string, conversation_id: string | null, title: string | null } = { status: 'unknown', conversation_id: null, title: null }
+    let lastResponse = { note: 'Creating new OpenHands conversation' }
     
     try {
-      const conversationUrl = `${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}`
-      const conversationRes = await fetch(conversationUrl, {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
+      const createUrl = `${c.env.OPENHANDS_API_URL}/conversations`
+      console.log(`Creating OpenHands conversation: ${createUrl}`)
+      
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000) // 5 second timeout
+      
+      const createBody: any = {
+        initial_user_msg: first_prompt,
+        repository: repository
+      }
+      
+      if (branch) {
+        createBody.selected_branch = branch
+      }
+      
+      const createRes = await fetch(createUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(createBody),
+        signal: controller.signal
       })
       
-      if (conversationRes.ok) {
-        const conversationData = await conversationRes.json()
+      clearTimeout(timeoutId)
+      
+      if (createRes.ok) {
+        const createData = await createRes.json() as any
+        console.log(`Created OpenHands conversation: id=${createData.conversation_id}, status=${createData.conversation_status}`)
+        
         openhandsInfo = {
-          status: conversationData.status,
-          conversation: conversationData
+          status: createData.conversation_status || 'unknown',
+          conversation_id: createData.conversation_id,
+          title: 'New conversation'
         }
         
-        // Try to get the last message/response from conversation data
-        // This depends on OpenHands API structure
-        if (conversationData.last_message) {
-          lastResponse = conversationData.last_message
-        } else if (conversationData.messages && conversationData.messages.length > 0) {
-          lastResponse = conversationData.messages[conversationData.messages.length - 1]
-        } else {
-          lastResponse = { note: 'No last response found in conversation data' }
-        }
+        // The conversation is created with initial_user_msg, so it should process automatically
+        lastResponse = { note: `Conversation created with ID: ${createData.conversation_id}. Initial message sent: "${first_prompt.substring(0, 50)}..."` }
       } else {
-        openhandsInfo = { error: `Failed to get conversation: ${conversationRes.status}`, response: await conversationRes.text() }
+        console.log(`OpenHands create API returned ${createRes.status}: ${await createRes.text()}`)
+        return c.json({ error: `Failed to create OpenHands conversation: ${createRes.status}` }, 500)
       }
-    } catch (e) {
-      openhandsInfo = { error: e.message }
+    } catch (e: any) {
+      console.log(`OpenHands create error: ${e.message}`)
+      return c.json({ error: `Failed to create OpenHands conversation: ${e.message}` }, 500)
     }
 
     // 2. Send to DeepSeek
-    const prompt = `OpenHands Conversation ID: ${conversation_id}
+    const prompt = `OpenHands Conversation ID: ${openhandsInfo.conversation_id}
 
-First Prompt/Context: ${first_prompt}
+Context/Task for DeepSeek: ${first_prompt}
 
-OpenHands Conversation Info: ${JSON.stringify(openhandsInfo, null, 2)}
-
-Last Response from OpenHands: ${JSON.stringify(lastResponse, null, 2)}
+OpenHands Status: ${openhandsInfo.status}
 
 You are DeepSeek agent monitoring OpenHands. Based on the above, what should you do?
 
@@ -66,6 +90,11 @@ You can:
 
 What's your response?`
     
+    console.log(`Sending to DeepSeek...`)
+    
+    const deepseekController = new AbortController()
+    const deepseekTimeoutId = setTimeout(() => deepseekController.abort(), 10000) // 10 second timeout
+    
     const deepseekRes = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${c.env.DEEPSEEK_API_KEY}`, 'Content-Type': 'application/json' },
@@ -73,8 +102,11 @@ What's your response?`
         model: 'deepseek-chat', 
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7
-      })
+      }),
+      signal: deepseekController.signal
     })
+    
+    clearTimeout(deepseekTimeoutId)
     
     if (!deepseekRes.ok) {
       return c.json({ 
@@ -83,30 +115,30 @@ What's your response?`
       }, 500)
     }
     
-    const deepseekData = await deepseekRes.json()
+    const deepseekData = await deepseekRes.json() as any
     const deepseekResponse = deepseekData.choices[0].message.content
 
     // 3. Execute any actions DeepSeek wants to take
-    const actions = []
+    const actions: any[] = []
     
     // Check for STOP command
-    const stopMatch = deepseekResponse.match(/\*\[STOP\]\*\s*CONTEXT:\s*"([^"]+)"\s*(.+)/s)
+    const stopMatch = deepseekResponse.match(/\*\[STOP\]\*\s*CONTEXT:\s*"([^"]+)"\s*([\s\S]+)/)
     if (stopMatch) {
       try {
-        const stopRes = await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/stop`, {
+        const stopRes = await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${openhandsInfo.conversation_id}/stop`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: stopMatch[2] })
         })
         const stopData = stopRes.ok ? await stopRes.json() : { error: `Stop failed: ${stopRes.status}` }
         actions.push({ type: 'stop', context: stopMatch[1], message: stopMatch[2], result: stopData })
-      } catch (e) {
+      } catch (e: any) {
         actions.push({ type: 'stop', error: e.message })
       }
     }
     
     // Check for endpoint calls
-    const endpointRegex = /\*\[ENDPOINT:([A-Z]+):([^\]]+)\]\*\s*(\{.*?\})/gs
+    const endpointRegex = /\*\[ENDPOINT:([A-Z]+):([^\]]+)\]\*\s*(\{[\s\S]*?\})/g
     let endpointMatch
     while ((endpointMatch = endpointRegex.exec(deepseekResponse)) !== null) {
       try {
@@ -118,7 +150,7 @@ What's your response?`
         })
         const endpointData = endpointRes.ok ? await endpointRes.json() : { error: `Endpoint failed: ${endpointRes.status}` }
         actions.push({ type: 'endpoint', method: endpointMatch[1], endpoint: endpointMatch[2], result: endpointData })
-      } catch (e) {
+      } catch (e: any) {
         actions.push({ type: 'endpoint', error: e.message, endpoint: endpointMatch[2] })
       }
     }
@@ -126,16 +158,18 @@ What's your response?`
     // 4. Return DeepSeek's response
     return c.json({
       status: 'completed',
-      conversation_id,
+      conversation_id: openhandsInfo.conversation_id,
+      repository,
+      branch,
       first_prompt,
       openhands_info: openhandsInfo,
       last_response_from_openhands: lastResponse,
       deepseek_response: deepseekResponse,
       actions_taken: actions.length > 0 ? actions : 'No actions taken',
-      note: 'DeepSeek has analyzed the OpenHands conversation. Copy the deepseek_response to OpenHands if needed.'
+      note: 'OpenHands conversation created with initial message. DeepSeek has analyzed it. Copy the deepseek_response to OpenHands if needed.'
     })
 
-  } catch (error) {
+  } catch (error: any) {
     return c.json({ error: error.message, stack: error.stack }, 500)
   }
 })
