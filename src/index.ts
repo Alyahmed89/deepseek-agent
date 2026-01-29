@@ -103,7 +103,7 @@ app.post('/start', async (c) => {
       conversation_id,
       task,
       rules,
-      openhands: openhandsData,
+      openhands: openhandsResponse,
       deepseek: deepseekResponse,
       actions,
       next: 'Send OpenHands events to /events endpoint'
