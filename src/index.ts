@@ -25,31 +25,13 @@ app.post('/start', async (c) => {
       })
       
       if (startRes.ok) {
-        openhandsResponse = { start: await startRes.json(), start_status: startRes.status }
+        const startData = await startRes.json()
+        openhandsResponse = { start: startData, start_status: startRes.status, note: 'Conversation started. Task will be monitored by DeepSeek.' }
         
-        // Wait a bit for conversation to start
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        // Note: OpenHands /events endpoint returns 500, so we can't send task directly
+        // The task and rules are sent to DeepSeek for monitoring instead
+        // OpenHands should already have its own task from the conversation creation
         
-        // Then send the task as an event
-        try {
-          const eventUrl = `${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/events`
-          const eventRes = await fetch(eventUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'user_message',
-              content: task,
-              metadata: { source: 'deepseek_agent', task_type: 'initial' }
-            })
-          })
-          if (eventRes.ok) {
-            openhandsResponse = { ...openhandsResponse, event_sent: true, event_response: await eventRes.json(), event_status: eventRes.status }
-          } else {
-            openhandsResponse = { ...openhandsResponse, event_sent: false, event_error: `Failed to send event: ${eventRes.status}`, event_response_text: await eventRes.text() }
-          }
-        } catch (e) {
-          openhandsResponse = { ...openhandsResponse, event_sent: false, event_error: e.message }
-        }
       } else {
         openhandsResponse = { start_error: `Failed to start: ${startRes.status}`, start_response: await startRes.text() }
       }
@@ -57,8 +39,25 @@ app.post('/start', async (c) => {
       openhandsResponse = { error: e.message }
     }
 
-    // Ask DeepSeek
-    const prompt = `Task for OpenHands: ${task}\n\nYour rules: ${rules}\n\nYou can:\n1. Stop: *[STOP]* CONTEXT: "reason" message\n2. Call API: *[ENDPOINT:METHOD:/path]* {json}\n3. Respond\n\nYour plan?`
+    // Ask DeepSeek for monitoring plan
+    const prompt = `You are monitoring an OpenHands conversation (ID: ${conversation_id}).
+
+OpenHands Task: ${task}
+
+Your Monitoring Rules: ${rules}
+
+You will receive OpenHands events via the /events endpoint. Based on events, you can:
+
+1. STOP OpenHands if it violates rules: *[STOP]* CONTEXT: "reason" message
+2. Call any OpenHands API: *[ENDPOINT:METHOD:/path]* {json}
+3. Respond with analysis
+
+Available OpenHands APIs (base: ${c.env.OPENHANDS_API_URL}):
+- GET /conversations/{id} - Get conversation status
+- POST /conversations/{id}/stop - Stop conversation
+- POST /conversations/{id}/events - Send event (currently returns 500)
+
+What's your monitoring plan for this task?`
     
     const deepseekRes = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',

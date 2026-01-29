@@ -72,8 +72,8 @@ DeepSeek uses these exact formats:
 
 2. **Configure environment:**
    ```bash
-   # Set your OpenHands API key
-   npx wrangler secret put OPENHANDS_API_KEY
+   # No API key needed for OpenHands
+   # DeepSeek API key is already in wrangler.toml
    ```
 
 3. **Run locally:**
