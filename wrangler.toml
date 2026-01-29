@@ -5,4 +5,3 @@ compatibility_date = "2024-01-01"
 [vars]
 DEEPSEEK_API_KEY = "sk-57370a37c79f4b7db9dbd1e253c25b8b"
 OPENHANDS_API_URL = "https://openhands.anyapp.cfd/api/"
-OPENHANDS_API_KEY = "{{OPENHANDS_API_KEY}}"

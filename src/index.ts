@@ -14,13 +14,43 @@ app.post('/start', async (c) => {
       return c.json({ error: 'Need conversation_id, task, and rules' }, 400)
     }
 
-    // Start OpenHands
-    const openhandsRes = await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/start`, {
-      method: 'POST',
-      headers: { 'X-Session-API-Key': c.env.OPENHANDS_API_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ providers_set: null })
-    })
-    const openhandsData = await openhandsRes.json()
+    // Try to start the conversation first
+    let openhandsResponse = {}
+    try {
+      const startRes = await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providers_set: null })
+      })
+      
+      if (startRes.ok) {
+        openhandsResponse = { start: await startRes.json() }
+        
+        // Then send the task as an event
+        try {
+          const eventRes = await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/events`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'user_message',
+              content: task,
+              metadata: { source: 'deepseek_agent', task_type: 'initial' }
+            })
+          })
+          if (eventRes.ok) {
+            openhandsResponse = { ...openhandsResponse, event_sent: true, event_response: await eventRes.json() }
+          } else {
+            openhandsResponse = { ...openhandsResponse, event_sent: false, event_error: `Failed to send event: ${eventRes.status} ${await eventRes.text()}` }
+          }
+        } catch (e) {
+          openhandsResponse = { ...openhandsResponse, event_sent: false, event_error: e.message }
+        }
+      } else {
+        openhandsResponse = { start_error: `Failed to start: ${startRes.status}`, start_response: await startRes.text() }
+      }
+    } catch (e) {
+      openhandsResponse = { error: e.message }
+    }
 
     // Ask DeepSeek
     const prompt = `Task for OpenHands: ${task}\n\nYour rules: ${rules}\n\nYou can:\n1. Stop: *[STOP]* CONTEXT: "reason" message\n2. Call API: *[ENDPOINT:METHOD:/path]* {json}\n3. Respond\n\nYour plan?`
@@ -41,7 +71,7 @@ app.post('/start', async (c) => {
     if (stopMatch) {
       await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/stop`, {
         method: 'POST',
-        headers: { 'X-Session-API-Key': c.env.OPENHANDS_API_KEY, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: stopMatch[2] })
       })
       actions.push({ type: 'stop', reason: stopMatch[1] })
@@ -55,7 +85,7 @@ app.post('/start', async (c) => {
         const params = JSON.parse(match[3])
         const endpointRes = await fetch(`${c.env.OPENHANDS_API_URL}${match[2]}`, {
           method: match[1],
-          headers: { 'X-Session-API-Key': c.env.OPENHANDS_API_KEY, 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(params.body || params)
         })
         const endpointData = await endpointRes.json()
@@ -101,7 +131,7 @@ app.post('/events', async (c) => {
     if (stopMatch) {
       await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/stop`, {
         method: 'POST',
-        headers: { 'X-Session-API-Key': c.env.OPENHANDS_API_KEY, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: stopMatch[2] })
       })
       actions.push({ type: 'stop', reason: stopMatch[1] })
@@ -114,7 +144,7 @@ app.post('/events', async (c) => {
         const params = JSON.parse(match[3])
         const endpointRes = await fetch(`${c.env.OPENHANDS_API_URL}${match[2]}`, {
           method: match[1],
-          headers: { 'X-Session-API-Key': c.env.OPENHANDS_API_KEY, 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(params.body || params)
         })
         const endpointData = await endpointRes.json()
@@ -138,5 +168,4 @@ export default app
 interface CloudflareBindings {
   DEEPSEEK_API_KEY: string
   OPENHANDS_API_URL: string
-  OPENHANDS_API_KEY: string
 }
