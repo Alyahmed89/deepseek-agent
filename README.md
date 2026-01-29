@@ -1,123 +1,114 @@
 # DeepSeek Agent for OpenHands
 
-**Simple transfer agent**: Gets OpenHands conversation, sends to DeepSeek, returns DeepSeek's response.
+A Cloudflare Worker that acts as an intelligent agent between OpenHands and DeepSeek AI. It creates OpenHands conversations, sends them to DeepSeek for analysis, and can stop/correct OpenHands agents when needed.
 
-## What it does
+## Features
 
-1. **Simple transfer**: One endpoint that does everything
-2. **Get OpenHands info**: Fetches conversation details and last response
-3. **Send to DeepSeek**: Sends everything to DeepSeek for analysis
-4. **Execute actions**: DeepSeek can stop OpenHands or call APIs
-5. **Return response**: Returns DeepSeek's analysis for you to use
+- **Simple Transfer Flow**: `/start` endpoint creates ONE new OpenHands conversation with initial message
+- **DeepSeek Integration**: Sends conversation context to DeepSeek API for intelligent analysis
+- **STOP Command Detection**: Automatically detects `*[STOP]* CONTEXT: "reason"` commands in DeepSeek responses
+- **Endpoint Call Support**: Can trigger OpenHands API endpoints based on DeepSeek instructions
+- **Minimal & Efficient**: Small Cloudflare Worker with Hono framework
 
-## API Endpoint
+## API Endpoints
+
+### `GET /`
+- Returns basic info about the worker
+- Response: `{ "message": "DeepSeek Agent for OpenHands", "endpoints": ["POST /start"] }`
 
 ### `POST /start`
-Simple transfer endpoint.
+- Creates a new OpenHands conversation and sends it to DeepSeek
+- **Request Body**:
+  ```json
+  {
+    "repository": "owner/repo",
+    "first_prompt": "Your task description here",
+    "branch": "optional-branch-name"
+  }
+  ```
+- **Response**: DeepSeek's analysis with potential STOP commands
 
-```json
-{
-  "conversation_id": "your-openhands-id",
-  "first_prompt": "Task and rules for DeepSeek"
-}
+## How It Works
+
+1. **Create Conversation**: Creates a new OpenHands conversation using `initial_user_msg`
+2. **Send to DeepSeek**: Sends the conversation context to DeepSeek API
+3. **Analyze Response**: Checks for STOP commands or endpoint calls
+4. **Take Action**: If STOP command found, can stop OpenHands agent and provide corrections
+
+## STOP Command Format
+
+DeepSeek can use this format to stop OpenHands agents:
+```
+*[STOP]* CONTEXT: "Reason for stopping"
+Detailed explanation and corrections here...
 ```
 
-**What happens:**
-1. Gets OpenHands conversation info
-2. Sends to DeepSeek with your `first_prompt`
-3. DeepSeek analyzes and can:
-   - Stop OpenHands if needed
-   - Call OpenHands APIs
-   - Return analysis/feedback
-4. Returns DeepSeek's response
+The agent automatically detects this pattern and can trigger appropriate OpenHands API calls.
 
-**Response includes:**
-- OpenHands conversation info
-- Last response from OpenHands
-- DeepSeek's analysis
-- Any actions taken (STOP, API calls)
+## Environment Variables
 
-## DeepSeek Communication Format
+- `DEEPSEEK_API_KEY`: Your DeepSeek API key
+- `OPENHANDS_API_URL`: OpenHands API URL (default: `https://openhands.anyapp.cfd/api/`)
 
-DeepSeek uses these exact formats:
-
-### Stop OpenHands
-```
-*[STOP]* CONTEXT: "security issue" The agent is writing insecure code.
-```
-
-### Call any OpenHands API
-```
-*[ENDPOINT:POST:/conversations/123/stop]* {"message": "Stopping"}
-*[ENDPOINT:GET:/conversations/123]* {}
-*[ENDPOINT:POST:/conversations/123/events]* {"type": "feedback", "content": "Good job"}
-```
-
-## Setup
-
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-2. **Configure environment:**
-   ```bash
-   # No API key needed for OpenHands
-   # DeepSeek API key is already in wrangler.toml
-   ```
-
-3. **Run locally:**
-   ```bash
-   npm run dev
-   ```
-
-4. **Deploy to Cloudflare:**
-   ```bash
-   npm run deploy
-   ```
-
-## Test
+## Local Development
 
 ```bash
-# Simple test
-curl -X POST https://deepseek-agent.alghamdimo89.workers.dev/start \
+# Install dependencies
+npm install
+
+# Run locally
+npx wrangler dev
+
+# Deploy to Cloudflare
+npx wrangler deploy
+```
+
+## Testing
+
+```bash
+# Test the flow manually
+python3 test_flow.py
+
+# Test DeepSeek API directly
+python3 test_deepseek.py
+```
+
+## Example Usage
+
+```bash
+curl -X POST http://localhost:8787/start \
   -H "Content-Type: application/json" \
   -d '{
-    "conversation_id": "your-openhands-id",
-    "first_prompt": "Task: Create web server. Rules: Monitor for security issues."
+    "repository": "Alyahmed89/eta",
+    "first_prompt": "Create a simple web server with Node.js. Monitor for security issues."
   }'
 ```
 
-Or use the test script:
-```bash
-chmod +x test_simple.sh
-./test_simple.sh
+## Repository Structure
+
+```
+├── src/
+│   └── index.ts          # Main Cloudflare Worker code
+├── test_flow.py          # Manual flow test
+├── test_deepseek.py      # DeepSeek API test
+├── wrangler.toml         # Cloudflare Worker config
+├── package.json          # Dependencies
+└── README.md             # This file
 ```
 
-## How to Use
+## Deployment Notes
 
-1. **Create OpenHands conversation** (in OpenHands UI)
-2. **Write your prompt** in OpenHands UI
-3. **Get OpenHands response**
-4. **Call DeepSeek agent:**
-   ```bash
-   curl -X POST https://deepseek-agent.alghamdimo89.workers.dev/start \
-     -H "Content-Type: application/json" \
-     -d '{
-       "conversation_id": "YOUR_ID",
-       "first_prompt": "Task and rules for DeepSeek"
-     }'
-   ```
-5. **Get DeepSeek's response** in the API response
-6. **Copy DeepSeek's response** to OpenHands if needed
+1. Update `wrangler.toml` with your Cloudflare account ID
+2. Set environment variables in Cloudflare dashboard
+3. Run `npx wrangler deploy` to deploy
+4. The worker will be available at your Cloudflare Workers URL
 
-## Files
+## Security Considerations
 
-- `src/index.ts` - Main Cloudflare Worker (simple 150-line implementation)
-- `package.json` - Minimal dependencies
-- `wrangler.toml` - Cloudflare config with DeepSeek API key
-- `test_simple.sh` - Simple test script
-- `test_manual_events.py` - Python script for manual testing
+- API keys are stored as Cloudflare environment variables
+- All API calls use HTTPS
+- Input validation on all endpoints
+- Timeout protection for external API calls
 
 ## License
 
