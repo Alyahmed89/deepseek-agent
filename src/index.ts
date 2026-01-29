@@ -17,18 +17,23 @@ app.post('/start', async (c) => {
     // Try to start the conversation first
     let openhandsResponse = {}
     try {
-      const startRes = await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/start`, {
+      const startUrl = `${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/start`
+      const startRes = await fetch(startUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ providers_set: null })
       })
       
       if (startRes.ok) {
-        openhandsResponse = { start: await startRes.json() }
+        openhandsResponse = { start: await startRes.json(), start_status: startRes.status }
+        
+        // Wait a bit for conversation to start
+        await new Promise(resolve => setTimeout(resolve, 1000))
         
         // Then send the task as an event
         try {
-          const eventRes = await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/events`, {
+          const eventUrl = `${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/events`
+          const eventRes = await fetch(eventUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -38,9 +43,9 @@ app.post('/start', async (c) => {
             })
           })
           if (eventRes.ok) {
-            openhandsResponse = { ...openhandsResponse, event_sent: true, event_response: await eventRes.json() }
+            openhandsResponse = { ...openhandsResponse, event_sent: true, event_response: await eventRes.json(), event_status: eventRes.status }
           } else {
-            openhandsResponse = { ...openhandsResponse, event_sent: false, event_error: `Failed to send event: ${eventRes.status} ${await eventRes.text()}` }
+            openhandsResponse = { ...openhandsResponse, event_sent: false, event_error: `Failed to send event: ${eventRes.status}`, event_response_text: await eventRes.text() }
           }
         } catch (e) {
           openhandsResponse = { ...openhandsResponse, event_sent: false, event_error: e.message }
