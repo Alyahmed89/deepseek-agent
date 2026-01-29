@@ -145,52 +145,114 @@ app.post('/events', async (c) => {
   try {
     const { conversation_id, event } = await c.req.json()
     
-    const prompt = `OpenHands event:\n${JSON.stringify(event, null, 2)}\n\nWhat to do?`
+    if (!conversation_id || !event) {
+      return c.json({ error: 'Need conversation_id and event' }, 400)
+    }
+    
+    // Get conversation context first
+    let conversationContext = ''
+    try {
+      const statusRes = await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      })
+      if (statusRes.ok) {
+        const conversationData = await statusRes.json()
+        conversationContext = `Conversation ${conversation_id} is ${conversationData.status}. `
+      }
+    } catch (e) {
+      // Ignore, use default context
+    }
+    
+    const prompt = `${conversationContext}OpenHands event received:
+
+Event Type: ${event.type || 'unknown'}
+Content: ${typeof event.content === 'string' ? event.content : JSON.stringify(event.content, null, 2)}
+Source: ${event.source || 'unknown'}
+Metadata: ${event.metadata ? JSON.stringify(event.metadata, null, 2) : 'none'}
+
+What should I do? You can:
+1. STOP OpenHands if it violates rules: *[STOP]* CONTEXT: "reason" message
+2. Call any OpenHands API: *[ENDPOINT:METHOD:/path]* {json}
+3. Respond with analysis or feedback
+
+Remember: You're monitoring OpenHands for security issues and rule violations.`
     
     const deepseekRes = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${c.env.DEEPSEEK_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }] })
+      body: JSON.stringify({ 
+        model: 'deepseek-chat', 
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.3
+      })
     })
+    
+    if (!deepseekRes.ok) {
+      return c.json({ 
+        error: `DeepSeek API error: ${deepseekRes.status}`,
+        status: deepseekRes.status,
+        response: await deepseekRes.text()
+      }, 500)
+    }
+    
     const deepseekData = await deepseekRes.json()
     const response = deepseekData.choices[0].message.content
 
     // Execute actions
     const actions = []
     
-    const stopMatch = response.match(/\*\[STOP\]\*\s*CONTEXT:\s*"([^"]+)"\s*(.*)/i)
+    // Check for STOP command
+    const stopMatch = response.match(/\*\[STOP\]\*\s*CONTEXT:\s*"([^"]+)"\s*(.+)/s)
     if (stopMatch) {
-      await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/stop`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: stopMatch[2] })
-      })
-      actions.push({ type: 'stop', reason: stopMatch[1] })
-    }
-
-    const endpointRegex = /\*\[ENDPOINT:(\w+):([^\]]+)\]\*\s*(\{[\s\S]*?\})/g
-    let match
-    while ((match = endpointRegex.exec(response)) !== null) {
       try {
-        const params = JSON.parse(match[3])
-        const endpointRes = await fetch(`${c.env.OPENHANDS_API_URL}${match[2]}`, {
-          method: match[1],
+        const stopRes = await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/stop`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: stopMatch[2] })
+        })
+        const stopData = stopRes.ok ? await stopRes.json() : { error: `Stop failed: ${stopRes.status}` }
+        actions.push({ type: 'stop', context: stopMatch[1], message: stopMatch[2], result: stopData })
+      } catch (e) {
+        actions.push({ type: 'stop', error: e.message })
+      }
+    }
+    
+    // Check for endpoint calls
+    const endpointRegex = /\*\[ENDPOINT:([A-Z]+):([^\]]+)\]\*\s*(\{.*?\})/gs
+    let endpointMatch
+    while ((endpointMatch = endpointRegex.exec(response)) !== null) {
+      try {
+        const params = JSON.parse(endpointMatch[3])
+        const endpointRes = await fetch(`${c.env.OPENHANDS_API_URL}${endpointMatch[2]}`, {
+          method: endpointMatch[1],
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(params.body || params)
         })
-        const endpointData = await endpointRes.json()
-        actions.push({ type: 'endpoint', method: match[1], endpoint: match[2], result: endpointData })
-      } catch (e) {}
+        const endpointData = endpointRes.ok ? await endpointRes.json() : { error: `Endpoint failed: ${endpointRes.status}` }
+        actions.push({ type: 'endpoint', method: endpointMatch[1], endpoint: endpointMatch[2], result: endpointData })
+      } catch (e) {
+        actions.push({ type: 'endpoint', error: e.message, endpoint: endpointMatch[2] })
+      }
     }
 
     return c.json({
-      status: 'processed',
+      status: 'event_processed',
+      conversation_id,
+      event_received: {
+        type: event.type,
+        content_preview: typeof event.content === 'string' ? 
+          (event.content.length > 100 ? event.content.substring(0, 100) + '...' : event.content) : 
+          'object',
+        source: event.source
+      },
       deepseek_response: response,
-      actions
+      actions_executed: actions.length > 0 ? actions : 'No actions triggered',
+      note: 'Event forwarded to DeepSeek. Check actions_executed for automatic actions.'
     })
-
+    
   } catch (error) {
-    return c.json({ error: error.message }, 500)
+    return c.json({ error: error.message, stack: error.stack }, 500)
   }
 })
 
