@@ -14,26 +14,53 @@ app.post('/start', async (c) => {
       return c.json({ error: 'Need conversation_id, task, and rules' }, 400)
     }
 
-    // Try to start the conversation first
+    // Check conversation status first
     let openhandsResponse = {}
     try {
-      const startUrl = `${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/start`
-      const startRes = await fetch(startUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ providers_set: null })
+      // First, get conversation status
+      const statusUrl = `${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}`
+      const statusRes = await fetch(statusUrl, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
       })
       
-      if (startRes.ok) {
-        const startData = await startRes.json()
-        openhandsResponse = { start: startData, start_status: startRes.status, note: 'Conversation started. Task will be monitored by DeepSeek.' }
+      if (statusRes.ok) {
+        const conversationData = await statusRes.json()
+        const conversationStatus = conversationData.status
         
-        // Note: OpenHands /events endpoint returns 500, so we can't send task directly
-        // The task and rules are sent to DeepSeek for monitoring instead
-        // OpenHands should already have its own task from the conversation creation
+        openhandsResponse = { 
+          conversation: conversationData, 
+          status: conversationStatus,
+          note: 'Conversation found. Will monitor with DeepSeek.' 
+        }
         
+        // Only try to start if conversation is STOPPED
+        if (conversationStatus === 'STOPPED') {
+          const startUrl = `${c.env.OPENHANDS_API_URL}/conversations/${conversation_id}/start`
+          const startRes = await fetch(startUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ providers_set: null })
+          })
+          
+          if (startRes.ok) {
+            const startData = await startRes.json()
+            openhandsResponse = { 
+              ...openhandsResponse, 
+              start: startData, 
+              start_status: startRes.status,
+              note: 'Conversation started from STOPPED state.' 
+            }
+          } else {
+            openhandsResponse = { 
+              ...openhandsResponse, 
+              start_error: `Failed to start: ${startRes.status}`, 
+              start_response: await startRes.text() 
+            }
+          }
+        }
       } else {
-        openhandsResponse = { start_error: `Failed to start: ${startRes.status}`, start_response: await startRes.text() }
+        openhandsResponse = { status_error: `Failed to get status: ${statusRes.status}`, status_response: await statusRes.text() }
       }
     } catch (e) {
       openhandsResponse = { error: e.message }
