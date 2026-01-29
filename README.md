@@ -111,6 +111,59 @@ curl -X POST http://localhost:8787/events \
   }'
 ```
 
+## Manual Event Forwarding
+
+Since OpenHands doesn't automatically send events to external services, you need to manually forward events:
+
+### Option 1: Use the Python script
+```bash
+# Edit test_manual_events.py with your conversation ID
+python test_manual_events.py
+```
+
+### Option 2: Manual curl commands
+1. **Start monitoring an existing conversation:**
+```bash
+curl -X POST https://deepseek-agent.alghamdimo89.workers.dev/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "conversation_id": "YOUR_OPENHANDS_ID",
+    "task": "Task description",
+    "rules": "Monitoring rules"
+  }'
+```
+
+2. **When OpenHands does something, forward the event:**
+```bash
+curl -X POST https://deepseek-agent.alghamdimo89.workers.dev/events \
+  -H "Content-Type: application/json" \
+  -d '{
+    "conversation_id": "YOUR_OPENHANDS_ID",
+    "event": {
+      "type": "code_written",
+      "content": "Code that OpenHands wrote",
+      "source": "agent"
+    }
+  }'
+```
+
+### Option 3: Automate with browser extension
+You could create a browser extension that:
+1. Listens to OpenHands events in the browser
+2. Automatically forwards them to the DeepSeek agent
+3. Shows DeepSeek's responses
+
+## Event Types to Forward
+
+Forward these OpenHands events:
+- `code_written` - When agent writes code
+- `command_executed` - When agent runs commands
+- `file_created` - When agent creates files
+- `git_operation` - When agent uses git
+- `error` - When agent encounters errors
+- `user_message` - User messages to agent
+- `agent_response` - Agent responses to user
+
 ## Files
 
 - `src/index.ts` - Main Cloudflare Worker (only 150 lines)
