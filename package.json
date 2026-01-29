@@ -1,7 +1,6 @@
 {
   "name": "deepseek-agent",
   "version": "1.0.0",
-  "description": "Cloudflare Worker that integrates DeepSeek with OpenHands",
   "main": "src/index.ts",
   "scripts": {
     "dev": "wrangler dev",
@@ -14,8 +13,5 @@
     "@cloudflare/workers-types": "^4.20241106.0",
     "typescript": "^5.3.3",
     "wrangler": "^3.58.0"
-  },
-  "engines": {
-    "node": ">=18"
   }
 }
