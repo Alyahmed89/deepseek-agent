@@ -145,7 +145,7 @@ What's your response?`
     }
     
     // Check for endpoint calls
-    const endpointRegex = /\*\[ENDPOINT:([A-Z]+):([^\]]+)\]\*\s*(\{[\s\S]*?\})/g
+    const endpointRegex = /\*\[ENDPOINT:([A-Z]+):([^\]]+)\]\*\s*(?:```(?:json)?\s*)?(\{[\s\S]*?\})(?:\s*```)?/g
     let endpointMatch
     while ((endpointMatch = endpointRegex.exec(deepseekResponse)) !== null) {
       try {
@@ -176,7 +176,9 @@ What's your response?`
       last_response_from_openhands: lastResponse,
       deepseek_response: deepseekResponse,
       actions_taken: actions.length > 0 ? actions : 'No actions taken',
-      note: 'OpenHands conversation created with initial message. DeepSeek has analyzed it. Copy the deepseek_response to OpenHands if needed.'
+      note: actions.length > 0 
+        ? 'OpenHands conversation created. DeepSeek has analyzed it and actions have been executed automatically.'
+        : 'OpenHands conversation created with initial message. DeepSeek has analyzed it. No actions were taken from the response.'
     })
 
   } catch (error: any) {
