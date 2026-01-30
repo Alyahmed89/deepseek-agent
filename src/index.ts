@@ -127,7 +127,17 @@ Please provide a helpful response to the user's request. Your response will be u
       last_response_from_openhands: lastResponse,
       deepseek_response: deepseekResponse,
       actions_taken: actions.length > 0 ? actions : 'No actions taken',
-      note: 'First prompt sent to DeepSeek. DeepSeek response used as initial message for OpenHands conversation.'
+      note: `First prompt sent to DeepSeek. DeepSeek's response has been sent to OpenHands as the initial message.
+      
+OpenHands conversation created with ID: ${openhandsInfo.conversation_id}
+OpenHands status: ${openhandsInfo.status}
+
+This is an initial handoff. To continue the conversation:
+1. OpenHands will process the initial message and may produce output
+2. Currently, there is no automatic forwarding of OpenHands responses back to DeepSeek
+3. For ongoing DeepSeek monitoring, a different architecture would be needed
+
+The conversation has been successfully started with DeepSeek's response as the first message.`
     })
 
   } catch (error: any) {
