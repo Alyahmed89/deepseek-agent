@@ -29,7 +29,10 @@ app.post('/start', async (c) => {
     let lastResponse = { note: 'Creating new OpenHands conversation' }
     
     try {
-      const createUrl = `${c.env.OPENHANDS_API_URL}/conversations`
+      // Ensure we don't have double slashes in the URL
+      const createUrl = c.env.OPENHANDS_API_URL.endsWith('/') 
+        ? `${c.env.OPENHANDS_API_URL}conversations`
+        : `${c.env.OPENHANDS_API_URL}/conversations`
       console.log(`Creating OpenHands conversation: ${createUrl}`)
       
       const controller = new AbortController()
@@ -125,7 +128,11 @@ What's your response?`
     const stopMatch = deepseekResponse.match(/\*\[STOP\]\*\s*CONTEXT:\s*"([^"]+)"\s*([\s\S]+)/)
     if (stopMatch) {
       try {
-        const stopRes = await fetch(`${c.env.OPENHANDS_API_URL}/conversations/${openhandsInfo.conversation_id}/stop`, {
+        // Ensure we don't have double slashes in the URL
+        const stopUrl = c.env.OPENHANDS_API_URL.endsWith('/')
+          ? `${c.env.OPENHANDS_API_URL}conversations/${openhandsInfo.conversation_id}/stop`
+          : `${c.env.OPENHANDS_API_URL}/conversations/${openhandsInfo.conversation_id}/stop`
+        const stopRes = await fetch(stopUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: stopMatch[2] })
@@ -143,7 +150,10 @@ What's your response?`
     while ((endpointMatch = endpointRegex.exec(deepseekResponse)) !== null) {
       try {
         const params = JSON.parse(endpointMatch[3])
-        const endpointRes = await fetch(`${c.env.OPENHANDS_API_URL}${endpointMatch[2]}`, {
+        // Ensure we don't have double slashes in the URL
+        const endpointPath = endpointMatch[2].startsWith('/') ? endpointMatch[2].substring(1) : endpointMatch[2]
+        const endpointUrl = `${c.env.OPENHANDS_API_URL}/${endpointPath}`
+        const endpointRes = await fetch(endpointUrl, {
           method: endpointMatch[1],
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(params.body || params)
