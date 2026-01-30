@@ -2,13 +2,13 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "ESNext",
-    "lib": ["ES2020", "ES2018", "DOM"],
+    "lib": ["ES2020", "ES2019", "ES2018", "ES2017", "ES2016", "ES2015", "DOM"],
     "types": ["@cloudflare/workers-types"],
     "moduleResolution": "bundler",
     "noEmit": true,
     "isolatedModules": true,
     "allowSyntheticDefaultImports": true,
-    "forceConsistentCaseInFileNames": true,
+    "forceConsistentCasingInFileNames": true,
     "strict": true,
     "skipLibCheck": true,
     "outDir": "./dist"

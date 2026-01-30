@@ -1,54 +1,69 @@
-# DeepSeek Agent for OpenHands
+# DeepSeek Agent for OpenHands (Simplified Flow)
 
-A Cloudflare Worker that acts as an intelligent agent between OpenHands and DeepSeek AI. It creates OpenHands conversations, sends them to DeepSeek for analysis, and can stop/correct OpenHands agents when needed.
+A Cloudflare Worker that acts as an intelligent agent between OpenHands and DeepSeek AI with a simplified continuous loop flow. It creates OpenHands conversations, sends responses to DeepSeek for analysis, and continues the loop until DeepSeek says "done" or a stop condition is met.
 
 ## Features
 
-- **Simple Transfer Flow**: `/start` endpoint creates ONE new OpenHands conversation with initial message
-- **DeepSeek Integration**: Sends conversation context to DeepSeek API for intelligent analysis
-- **STOP Command Detection**: Automatically detects `*[STOP]* CONTEXT: "reason"` commands in DeepSeek responses
-- **Endpoint Call Support**: Can trigger OpenHands API endpoints based on DeepSeek instructions
-- **Minimal & Efficient**: Small Cloudflare Worker with Hono framework
+- **Simplified Continuous Loop**: `/start` begins the loop, `/continue` keeps it going
+- **DeepSeek Integration**: Sends OpenHands responses to DeepSeek API for intelligent analysis
+- **Automatic Stop Detection**: Detects when DeepSeek says "done", "stop", "task completed", etc.
+- **Maximum Iterations**: Prevents infinite loops with configurable iteration limits
+- **Minimal & Efficient**: Simple Cloudflare Worker with Hono framework
 
 ## API Endpoints
 
 ### `GET /`
 - Returns basic info about the worker
-- Response: `{ "message": "DeepSeek Agent for OpenHands", "endpoints": ["POST /start"] }`
+- Response: `{ "message": "DeepSeek Agent for OpenHands (Simplified Flow)", "endpoints": ["POST /start", "POST /continue/:conversation_id"] }`
 
 ### `POST /start`
-- Creates a new OpenHands conversation and sends it to DeepSeek
+- Starts a new conversation loop
 - **Request Body**:
   ```json
   {
     "repository": "owner/repo",
     "first_prompt": "Your task description here",
-    "branch": "optional-branch-name"
+    "branch": "optional-branch-name",
+    "max_iterations": 10
   }
   ```
-- **Response**: DeepSeek's analysis with potential STOP commands
+- **Response**: Initial DeepSeek response and OpenHands conversation ID
 
-## How It Works
+### `POST /continue/:conversation_id`
+- Continues an existing conversation loop
+- **Request Body**:
+  ```json
+  {
+    "openhands_response": "Response from OpenHands",
+    "iteration": 1,
+    "max_iterations": 10
+  }
+  ```
+- **Response**: DeepSeek's analysis and next steps
 
-1. **Create Conversation**: Creates a new OpenHands conversation using `initial_user_msg`
-2. **Send to DeepSeek**: Sends the conversation context to DeepSeek API
-3. **Analyze Response**: Checks for STOP commands or endpoint calls
-4. **Take Action**: If STOP command found, can stop OpenHands agent and provide corrections
+## How It Works (Simplified Flow)
 
-## STOP Command Format
+1. **Start Loop**: User calls `/start` with repository and first prompt
+2. **DeepSeek Analysis**: First prompt sent to DeepSeek for initial response
+3. **OpenHands Creation**: DeepSeek's response used to create OpenHands conversation
+4. **Continuous Loop**:
+   - OpenHands processes task and responds
+   - Response sent to DeepSeek via `/continue`
+   - DeepSeek analyzes and provides next steps
+   - Next steps sent back to OpenHands
+   - Repeat until DeepSeek says "done" or max iterations reached
 
-DeepSeek can use this format to stop OpenHands agents:
-```
-*[STOP]* CONTEXT: "Reason for stopping"
-Detailed explanation and corrections here...
-```
+## Stop Conditions
 
-The agent automatically detects this pattern and can trigger appropriate OpenHands API calls.
+The loop automatically stops when:
+- DeepSeek response contains: "done", "stop", "task completed", "finished", etc.
+- Maximum iterations reached (default: 10)
+- Error occurs in API calls
 
 ## Environment Variables
 
 - `DEEPSEEK_API_KEY`: Your DeepSeek API key
-- `OPENHANDS_API_URL`: OpenHands API URL (default: `https://openhands.anyapp.cfd/api/`)
+- `OPENHANDS_API_URL`: OpenHands API URL (default: `https://openhands.anyapp.cfd/api`)
 
 ## Local Development
 
@@ -66,8 +81,8 @@ npx wrangler deploy
 ## Testing
 
 ```bash
-# Test the flow manually
-python3 test_flow.py
+# Test the simplified flow
+node test_simplified_flow.js
 
 # Test DeepSeek API directly
 python3 test_deepseek.py
@@ -76,11 +91,20 @@ python3 test_deepseek.py
 ## Example Usage
 
 ```bash
+# Start a new conversation loop
 curl -X POST http://localhost:8787/start \
   -H "Content-Type: application/json" \
   -d '{
     "repository": "Alyahmed89/eta",
-    "first_prompt": "Create a simple web server with Node.js. Monitor for security issues."
+    "first_prompt": "Create a simple web server with Node.js"
+  }'
+
+# Continue the loop when OpenHands responds
+curl -X POST http://localhost:8787/continue/CONVERSATION_ID \
+  -H "Content-Type: application/json" \
+  -d '{
+    "openhands_response": "I have created the web server. Here are the details...",
+    "iteration": 1
   }'
 ```
 
@@ -88,7 +112,10 @@ curl -X POST http://localhost:8787/start \
 
 ```
 ├── src/
-│   └── index.ts          # Main Cloudflare Worker code
+│   ├── index.ts          # Main Cloudflare Worker code (simplified flow)
+│   ├── simple.ts         # Legacy simple implementation
+│   └── test_simple.ts    # Test file
+├── test_simplified_flow.js # Test for simplified flow
 ├── test_flow.py          # Manual flow test
 ├── test_deepseek.py      # DeepSeek API test
 ├── wrangler.toml         # Cloudflare Worker config
@@ -109,6 +136,7 @@ curl -X POST http://localhost:8787/start \
 - All API calls use HTTPS
 - Input validation on all endpoints
 - Timeout protection for external API calls
+- Maximum iterations prevent infinite loops
 
 ## License
 
