@@ -2,7 +2,7 @@
 // ALL state management and alarm-driven logic lives here
 import { callDeepSeek } from '../services/deepseek';
 import { createOpenHandsConversation, getOpenHandsConversation, injectMessageToOpenHands } from '../services/openhands';
-import { MAX_ITERATIONS, STOP_TOKEN, ALARM_DELAY_INIT, ALARM_DELAY_WAITING } from '../constants';
+import { MAX_ITERATIONS, STOP_TOKEN, ALARM_DELAY_INIT, ALARM_DELAY_WAITING, EVENT_COOLDOWN_MS, MAX_COOLDOWN_WAIT_MS, ACTIVE_CHECK_INTERVAL } from '../constants';
 import { CloudflareBindings, ConversationData, ConversationState, OpenHandsEvent } from '../types';
 
 export class ConversationOrchestratorDO_2026A {
@@ -263,6 +263,17 @@ export class ConversationOrchestratorDO_2026A {
     // Check if we have any agent message events
     if (!openhandsStatus.events || openhandsStatus.events.length === 0) {
       console.log(`[DO:${this.state.id}] No agent message events found`);
+      
+      // Check if we have a pending event that needs processing
+      if (this.conversation.pending_event_content && this.conversation.cooldown_started_at) {
+        const timeSinceCooldownStart = Date.now() - this.conversation.cooldown_started_at;
+        if (timeSinceCooldownStart >= EVENT_COOLDOWN_MS) {
+          console.log(`[DO:${this.state.id}] Cooldown period passed with no new events, processing pending event`);
+          await this.processPendingEvent();
+          return;
+        }
+      }
+      
       // Reschedule alarm
       await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING);
       return;
@@ -274,7 +285,33 @@ export class ConversationOrchestratorDO_2026A {
     // Check if this is a new event (id > last_sent_event_id)
     if (latestAgentMessage.id <= this.conversation.last_sent_event_id) {
       console.log(`[DO:${this.state.id}] No new agent message events found (latest ID: ${latestAgentMessage.id}, last sent: ${this.conversation.last_sent_event_id})`);
-      // Reschedule alarm
+      
+      // Check if we have a pending event that needs processing
+      if (this.conversation.pending_event_content && this.conversation.cooldown_started_at) {
+        const timeSinceLastEvent = Date.now() - (this.conversation.last_event_seen_at || 0);
+        const timeSinceCooldownStart = Date.now() - this.conversation.cooldown_started_at;
+        
+        // Check if cooldown period has passed (10 seconds with no new events)
+        if (timeSinceLastEvent >= EVENT_COOLDOWN_MS) {
+          console.log(`[DO:${this.state.id}] Cooldown period passed with no new events, processing pending event`);
+          await this.processPendingEvent();
+          return;
+        }
+        
+        // Check if max wait time has been reached (30 seconds total)
+        if (timeSinceCooldownStart >= MAX_COOLDOWN_WAIT_MS) {
+          console.log(`[DO:${this.state.id}] Max cooldown wait time reached (${MAX_COOLDOWN_WAIT_MS}ms), forcing processing of pending event`);
+          await this.processPendingEvent();
+          return;
+        }
+        
+        // Still in cooldown period, check again soon
+        console.log(`[DO:${this.state.id}] Still in cooldown period (${timeSinceLastEvent}ms since last event), checking again in ${ACTIVE_CHECK_INTERVAL}ms`);
+        await this.state.storage.setAlarm(Date.now() + ACTIVE_CHECK_INTERVAL);
+        return;
+      }
+      
+      // No pending event, reschedule normal alarm
       await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING);
       return;
     }
@@ -292,8 +329,96 @@ export class ConversationOrchestratorDO_2026A {
       return;
     }
     
+    // Track last_event_seen_at BEFORE overwriting with new event (first tweak)
+    const previousLastEventSeenAt = this.conversation.last_event_seen_at;
+    this.conversation.last_event_seen_at = Date.now();
+    
+    // Store event as pending (don't process immediately)
+    this.conversation.pending_event_content = messageContent;
+    this.conversation.pending_event_id = latestAgentMessage.id;
+    
+    // If this is the first event in a sequence, start the cooldown timer
+    if (!this.conversation.cooldown_started_at) {
+      this.conversation.cooldown_started_at = Date.now();
+      console.log(`[DO:${this.state.id}] Starting cooldown timer for event ${latestAgentMessage.id}`);
+    } else {
+      console.log(`[DO:${this.state.id}] Updated pending event to ${latestAgentMessage.id}, cooldown timer continues`);
+    }
+    
+    // Check if we should process immediately (edge case: first event after long pause)
+    if (previousLastEventSeenAt && (Date.now() - previousLastEventSeenAt >= EVENT_COOLDOWN_MS)) {
+      console.log(`[DO:${this.state.id}] Previous event was ${Date.now() - previousLastEventSeenAt}ms ago, processing immediately`);
+      await this.processPendingEvent();
+      return;
+    }
+    
+    // Check if max wait time has been reached (second tweak: 30s cap)
+    const timeSinceCooldownStart = Date.now() - (this.conversation.cooldown_started_at || Date.now());
+    if (timeSinceCooldownStart >= MAX_COOLDOWN_WAIT_MS) {
+      console.log(`[DO:${this.state.id}] Max cooldown wait time reached (${MAX_COOLDOWN_WAIT_MS}ms), forcing processing`);
+      await this.processPendingEvent();
+      return;
+    }
+    
+    // Schedule next check soon (during active event stream)
+    console.log(`[DO:${this.state.id}] Event ${latestAgentMessage.id} stored as pending, checking again in ${ACTIVE_CHECK_INTERVAL}ms`);
+    await this.state.storage.setAlarm(Date.now() + ACTIVE_CHECK_INTERVAL);
+  }
+  
+  // ==========================================================================
+  // HELPER METHODS
+  // ==========================================================================
+  
+  private async stopConversation(reason: string): Promise<void> {
+    console.log(`[DO:${this.state.id}] Stopping conversation: ${reason}`);
+    
+    if (this.conversation) {
+      this.conversation.state = 'DONE';
+      this.conversation.status = 'stopped';
+      this.conversation.error_message = reason;
+      this.conversation.updated_at = Date.now();
+      
+      // Clear any pending event fields
+      this.conversation.pending_event_content = undefined;
+      this.conversation.pending_event_id = undefined;
+      this.conversation.last_event_seen_at = undefined;
+      this.conversation.cooldown_started_at = undefined;
+      
+      await this.state.storage.put('conversation', this.conversation);
+    }
+    
+    // Cancel any pending alarms
+    try {
+      await this.state.storage.deleteAlarm();
+    } catch (error) {
+      // Ignore errors if no alarm exists
+    }
+  }
+  
+  /**
+   * Process a pending event that has passed the cooldown period
+   * This sends the event content to DeepSeek and continues the loop
+   */
+  private async processPendingEvent(): Promise<void> {
+    if (!this.conversation || !this.conversation.pending_event_content || !this.conversation.pending_event_id) {
+      console.log(`[DO:${this.state.id}] No pending event to process`);
+      return;
+    }
+    
+    const messageContent = this.conversation.pending_event_content;
+    const eventId = this.conversation.pending_event_id;
+    
+    console.log(`[DO:${this.state.id}] Processing pending event ${eventId} after cooldown`);
+    
+    // Clear pending event fields
+    this.conversation.pending_event_content = undefined;
+    this.conversation.pending_event_id = undefined;
+    this.conversation.last_event_seen_at = undefined;
+    this.conversation.cooldown_started_at = undefined;
+    
+    // Update last sent event ID
+    this.conversation.last_sent_event_id = eventId;
     this.conversation.last_openhands_response = messageContent;
-    this.conversation.last_sent_event_id = latestAgentMessage.id;
     
     // Send OpenHands response to DeepSeek
     const deepseekResult = await callDeepSeek(
@@ -325,7 +450,7 @@ export class ConversationOrchestratorDO_2026A {
     // Inject DeepSeek response back to OpenHands
     const injectResult = await injectMessageToOpenHands(
       this.env.OPENHANDS_API_URL,
-      this.conversation.openhands_conversation_id,
+      this.conversation.openhands_conversation_id!,
       deepseekResult.response!
     );
     
@@ -338,30 +463,6 @@ export class ConversationOrchestratorDO_2026A {
     
     // Schedule next alarm to check OpenHands status
     await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING);
-  }
-  
-  // ==========================================================================
-  // HELPER METHODS
-  // ==========================================================================
-  
-  private async stopConversation(reason: string): Promise<void> {
-    console.log(`[DO:${this.state.id}] Stopping conversation: ${reason}`);
-    
-    if (this.conversation) {
-      this.conversation.state = 'DONE';
-      this.conversation.status = 'stopped';
-      this.conversation.error_message = reason;
-      this.conversation.updated_at = Date.now();
-      
-      await this.state.storage.put('conversation', this.conversation);
-    }
-    
-    // Cancel any pending alarms
-    try {
-      await this.state.storage.deleteAlarm();
-    } catch (error) {
-      // Ignore errors if no alarm exists
-    }
   }
   
   private checkForDone(response: string): boolean {

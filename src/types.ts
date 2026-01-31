@@ -33,6 +33,12 @@ export interface ConversationData {
   last_openhands_response?: string;
   created_at: number;
   updated_at: number;
+  
+  // Cooldown tracking for event processing
+  pending_event_content?: string;
+  pending_event_id?: number;
+  last_event_seen_at?: number; // Timestamp when we last saw an event
+  cooldown_started_at?: number; // Timestamp when cooldown period started
 }
 
 // OpenHands event types
