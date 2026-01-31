@@ -47,7 +47,7 @@ export async function createOpenHandsConversation(
       throw new Error(`OpenHands create error: ${response.status} - ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
     const conversationId = data.conversation_id;
 
     return {
@@ -94,7 +94,7 @@ export async function getOpenHandsConversation(
       throw new Error(`OpenHands status error: ${response.status} - ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
 
     return {
       success: true,

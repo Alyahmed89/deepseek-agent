@@ -61,7 +61,13 @@ export class ConversationDO_v2 {
   
   private async handleInitialize(request: Request): Promise<Response> {
     try {
-      const { repository, branch, initial_user_prompt, max_iterations } = await request.json();
+      const body = await request.json() as {
+        repository: string;
+        branch?: string;
+        initial_user_prompt: string;
+        max_iterations?: number;
+      };
+      const { repository, branch, initial_user_prompt, max_iterations } = body;
       
       if (!repository || !initial_user_prompt) {
         return new Response(JSON.stringify({ error: 'Need repository and initial_user_prompt' }), {

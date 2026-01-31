@@ -28,7 +28,12 @@ app.get('/', (c) => {
 // Start endpoint - MUST return immediately (no awaits to external APIs)
 app.post('/start', async (c) => {
   try {
-    const { repository, branch, initial_user_prompt } = await c.req.json();
+    const body = await c.req.json() as {
+      repository: string;
+      branch?: string;
+      initial_user_prompt: string;
+    };
+    const { repository, branch, initial_user_prompt } = body;
     
     // Validate required fields
     if (!repository || !initial_user_prompt) {

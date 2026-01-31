@@ -55,7 +55,7 @@ ${prompt}`;
       throw new Error(`DeepSeek API error: ${response.status} - ${errorText}`);
     }
 
-    const data = await response.json();
+    const data = await response.json() as any;
     const result = data.choices[0].message.content;
 
     return {
