@@ -39,6 +39,9 @@ export interface ConversationData {
   pending_event_id?: number;
   last_event_seen_at?: number; // Timestamp when we last saw an event
   cooldown_started_at?: number; // Timestamp when cooldown period started
+  
+  // DeepSeek system message (optional, set via API)
+  deepseek_system?: string;
 }
 
 // OpenHands event types

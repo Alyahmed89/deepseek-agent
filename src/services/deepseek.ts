@@ -7,6 +7,7 @@ import { DeepSeekResult } from '../types';
  * @param apiKey DeepSeek API key
  * @param prompt The prompt to send
  * @param context Additional context (repository, iteration, etc.)
+ * @param systemMessage Optional system message to override default
  * @returns DeepSeekResult with response or error
  */
 export async function callDeepSeek(
@@ -17,22 +18,34 @@ export async function callDeepSeek(
     branch?: string;
     iteration: number;
     max_iterations: number;
-  }
+  },
+  systemMessage?: string
 ): Promise<DeepSeekResult> {
   try {
-    const deepseekPrompt = `You are DeepSeek, an AI assistant working with OpenHands.
+    // Use custom system message if provided, otherwise use default
+    const systemContent = systemMessage || `You are DeepSeek, an AI assistant working with OpenHands.
     
 Repository: ${context.repository}${context.branch ? ` (branch: ${context.branch})` : ''}
 Iteration: ${context.iteration + 1} of ${context.max_iterations}
 
 IMPORTANT: Only include ${STOP_TOKEN} in your response if the task is COMPLETELY finished and no further action is needed.
 For multi-step tasks, do NOT include ${STOP_TOKEN} until all steps are done.
-Provide clear instructions for OpenHands to continue the work.
+Provide clear instructions for OpenHands to continue the work.`;
 
-${prompt}`;
+    const deepseekPrompt = `${prompt}`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), DEEPSEEK_TIMEOUT);
+
+    const messages = [];
+    
+    // Add system message if we have one
+    if (systemContent) {
+      messages.push({ role: 'system', content: systemContent });
+    }
+    
+    // Add user message
+    messages.push({ role: 'user', content: deepseekPrompt });
 
     const response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
@@ -42,7 +55,7 @@ ${prompt}`;
       },
       body: JSON.stringify({
         model: 'deepseek-chat',
-        messages: [{ role: 'user', content: deepseekPrompt }],
+        messages,
         temperature: 0.7,
         max_tokens: 2000
       }),
