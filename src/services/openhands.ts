@@ -138,8 +138,29 @@ export async function getOpenHandsConversation(
         // Check if the latest event is an agent message
         if (eventsData.events && eventsData.events.length > 0) {
           const latestEvent = eventsData.events[0];
-          if (latestEvent.source === 'agent' && latestEvent.action === 'message') {
-            latestAgentMessageEvent = latestEvent;
+          
+          // Check for agent message in different possible structures
+          if (latestEvent.source === 'agent') {
+            // Case 1: Direct message action
+            if (latestEvent.action === 'message') {
+              latestAgentMessageEvent = latestEvent;
+            }
+            // Case 2: Check for nested content in tool_call_metadata
+            else if (latestEvent.tool_call_metadata?.model_response?.choices?.[0]?.message?.content) {
+              // Create a synthetic message event from the nested content
+              const nestedContent = latestEvent.tool_call_metadata.model_response.choices[0].message.content;
+              latestAgentMessageEvent = {
+                ...latestEvent,
+                action: 'message',
+                args: {
+                  content: nestedContent,
+                  wait_for_response: false,
+                  file_urls: null,
+                  image_urls: []
+                },
+                message: nestedContent
+              };
+            }
           }
         }
         
