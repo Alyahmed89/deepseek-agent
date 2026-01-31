@@ -6,13 +6,12 @@ compatibility_date = "2024-01-01"
 DEEPSEEK_API_KEY = "sk-57370a37c79f4b7db9dbd1e253c25b8b"
 OPENHANDS_API_URL = "https://openhands.anyapp.cfd/api"
 
-# Remove Durable Objects binding since we don't use them in the new simple flow
-# [[durable_objects.bindings]]
-# name = "CONVERSATIONS"
-# class_name = "ConversationDO"
+# Keep Durable Object binding for compatibility with existing deployed Durable Objects
+[[durable_objects.bindings]]
+name = "CONVERSATIONS"
+class_name = "ConversationDO"
 
-[[migrations]]
-tag = "v2"
-# Delete the old ConversationDO class to remove existing Durable Objects
-# This allows us to deploy without the class since we don't need Durable Objects anymore
-delete_classes = ["ConversationDO"]
+# No migration needed since we're keeping the same class name
+# [[migrations]]
+# tag = "v2"
+# new_classes = ["ConversationDO"]

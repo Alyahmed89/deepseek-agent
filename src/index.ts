@@ -7,6 +7,7 @@ import { Hono } from 'hono'
 interface CloudflareBindings {
   DEEPSEEK_API_KEY: string
   OPENHANDS_API_URL: string
+  CONVERSATIONS: DurableObjectNamespace
 }
 
 const app = new Hono<{ Bindings: CloudflareBindings }>()
@@ -233,5 +234,23 @@ Your response will be sent to OpenHands to execute. Provide clear, specific inst
     return c.json({ error: error.message }, 500)
   }
 })
+
+// Minimal Durable Object class for compatibility
+// This doesn't actually do anything - just exists to satisfy the dependency
+export class ConversationDO {
+  constructor(state: any, env: any) {
+    // Empty constructor
+  }
+  
+  async fetch(request: Request): Promise<Response> {
+    // Return a simple response for any request
+    return new Response(JSON.stringify({
+      message: 'Durable Object in compatibility mode',
+      note: 'This Durable Object exists only for migration compatibility'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
 
 export default app
