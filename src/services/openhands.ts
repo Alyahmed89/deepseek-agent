@@ -187,8 +187,8 @@ export async function injectMessageToOpenHands(
 ): Promise<OpenHandsInjectResult> {
   try {
     const injectUrl = apiUrl.endsWith('/') 
-      ? `${apiUrl}conversations/${conversationId}/messages`
-      : `${apiUrl}/conversations/${conversationId}/messages`;
+      ? `${apiUrl}conversations/${conversationId}/events`
+      : `${apiUrl}/conversations/${conversationId}/events`;
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), OPENHANDS_TIMEOUT);
@@ -196,7 +196,17 @@ export async function injectMessageToOpenHands(
     const response = await fetch(injectUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({
+        source: 'user',
+        action: 'message',
+        message: message,
+        args: {
+          content: message,
+          wait_for_response: false,
+          file_urls: null,
+          image_urls: []
+        }
+      }),
       signal: controller.signal
     });
 
