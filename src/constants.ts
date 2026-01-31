@@ -7,6 +7,6 @@ export const DEEPSEEK_TIMEOUT = 30000; // 30 seconds
 export const OPENHANDS_TIMEOUT = 30000; // 30 seconds (increased from 10s due to large event responses)
 
 // Cooldown constants for event processing
-export const EVENT_COOLDOWN_MS = 10000; // Wait 10 seconds with no new events before processing
-export const MAX_COOLDOWN_WAIT_MS = 30000; // Maximum 30 seconds to wait even if events keep coming
-export const ACTIVE_CHECK_INTERVAL = 2000; // Check every 2 seconds during cooldown period
+export const EVENT_COOLDOWN_MS = 120000; // Wait 2 minutes (120 seconds) with no new events before processing
+export const MAX_COOLDOWN_WAIT_MS = 300000; // Maximum 5 minutes (300 seconds) to wait even if events keep coming
+export const ACTIVE_CHECK_INTERVAL = 10000; // Check every 10 seconds during cooldown period

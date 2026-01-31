@@ -268,7 +268,7 @@ export class ConversationOrchestratorDO_2026A {
       if (this.conversation.pending_event_content && this.conversation.cooldown_started_at) {
         const timeSinceCooldownStart = Date.now() - this.conversation.cooldown_started_at;
         if (timeSinceCooldownStart >= EVENT_COOLDOWN_MS) {
-          console.log(`[DO:${this.state.id}] Cooldown period passed with no new events, processing pending event`);
+          console.log(`[DO:${this.state.id}] Cooldown period passed (${Math.round(timeSinceCooldownStart/1000)}s with no new events), processing pending event`);
           await this.processPendingEvent();
           return;
         }
@@ -291,22 +291,22 @@ export class ConversationOrchestratorDO_2026A {
         const timeSinceLastEvent = Date.now() - (this.conversation.last_event_seen_at || 0);
         const timeSinceCooldownStart = Date.now() - this.conversation.cooldown_started_at;
         
-        // Check if cooldown period has passed (10 seconds with no new events)
+        // Check if cooldown period has passed (2 minutes with no new events)
         if (timeSinceLastEvent >= EVENT_COOLDOWN_MS) {
-          console.log(`[DO:${this.state.id}] Cooldown period passed with no new events, processing pending event`);
+          console.log(`[DO:${this.state.id}] Cooldown period passed (${Math.round(timeSinceLastEvent/1000)}s with no new events), processing pending event`);
           await this.processPendingEvent();
           return;
         }
         
-        // Check if max wait time has been reached (30 seconds total)
+        // Check if max wait time has been reached (5 minutes total)
         if (timeSinceCooldownStart >= MAX_COOLDOWN_WAIT_MS) {
-          console.log(`[DO:${this.state.id}] Max cooldown wait time reached (${MAX_COOLDOWN_WAIT_MS}ms), forcing processing of pending event`);
+          console.log(`[DO:${this.state.id}] Max cooldown wait time reached (${Math.round(timeSinceCooldownStart/1000)}s), forcing processing of pending event`);
           await this.processPendingEvent();
           return;
         }
         
         // Still in cooldown period, check again soon
-        console.log(`[DO:${this.state.id}] Still in cooldown period (${timeSinceLastEvent}ms since last event), checking again in ${ACTIVE_CHECK_INTERVAL}ms`);
+        console.log(`[DO:${this.state.id}] Still in cooldown period (${Math.round(timeSinceLastEvent/1000)}s since last event), checking again in ${ACTIVE_CHECK_INTERVAL/1000}s`);
         await this.state.storage.setAlarm(Date.now() + ACTIVE_CHECK_INTERVAL);
         return;
       }
@@ -347,21 +347,21 @@ export class ConversationOrchestratorDO_2026A {
     
     // Check if we should process immediately (edge case: first event after long pause)
     if (previousLastEventSeenAt && (Date.now() - previousLastEventSeenAt >= EVENT_COOLDOWN_MS)) {
-      console.log(`[DO:${this.state.id}] Previous event was ${Date.now() - previousLastEventSeenAt}ms ago, processing immediately`);
+      console.log(`[DO:${this.state.id}] Previous event was ${Math.round((Date.now() - previousLastEventSeenAt)/1000)}s ago, processing immediately`);
       await this.processPendingEvent();
       return;
     }
     
-    // Check if max wait time has been reached (second tweak: 30s cap)
+    // Check if max wait time has been reached (5 minute cap)
     const timeSinceCooldownStart = Date.now() - (this.conversation.cooldown_started_at || Date.now());
     if (timeSinceCooldownStart >= MAX_COOLDOWN_WAIT_MS) {
-      console.log(`[DO:${this.state.id}] Max cooldown wait time reached (${MAX_COOLDOWN_WAIT_MS}ms), forcing processing`);
+      console.log(`[DO:${this.state.id}] Max cooldown wait time reached (${Math.round(timeSinceCooldownStart/1000)}s), forcing processing`);
       await this.processPendingEvent();
       return;
     }
     
     // Schedule next check soon (during active event stream)
-    console.log(`[DO:${this.state.id}] Event ${latestAgentMessage.id} stored as pending, checking again in ${ACTIVE_CHECK_INTERVAL}ms`);
+    console.log(`[DO:${this.state.id}] Event ${latestAgentMessage.id} stored as pending, checking again in ${ACTIVE_CHECK_INTERVAL/1000}s`);
     await this.state.storage.setAlarm(Date.now() + ACTIVE_CHECK_INTERVAL);
   }
   
