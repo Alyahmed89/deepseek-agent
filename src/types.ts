@@ -42,6 +42,9 @@ export interface ConversationData {
   
   // DeepSeek system message (optional, set via API)
   deepseek_system?: string;
+  
+  // DeepSeek conversation history (maintains context across iterations)
+  conversation_messages?: DeepSeekMessage[];
 }
 
 // OpenHands event types

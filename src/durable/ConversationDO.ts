@@ -1,6 +1,6 @@
 // Durable Object for conversation orchestration
 // ALL state management and alarm-driven logic lives here
-import { callDeepSeek } from '../services/deepseek';
+import { callDeepSeek, buildInitialMessages } from '../services/deepseek';
 import { createOpenHandsConversation, getOpenHandsConversation, injectMessageToOpenHands } from '../services/openhands';
 import { MAX_ITERATIONS, STOP_TOKEN, ALARM_DELAY_INIT, ALARM_DELAY_WAITING, EVENT_COOLDOWN_MS, MAX_COOLDOWN_WAIT_MS, ACTIVE_CHECK_INTERVAL } from '../constants';
 import { CloudflareBindings, ConversationData, ConversationState, OpenHandsEvent } from '../types';
@@ -66,8 +66,9 @@ export class ConversationOrchestratorDO_2026A {
         branch?: string;
         initial_user_prompt: string;
         max_iterations?: number;
+        deepseek_system?: string;
       };
-      const { repository, branch, initial_user_prompt, max_iterations } = body;
+      const { repository, branch, initial_user_prompt, max_iterations, deepseek_system } = body;
       
       if (!repository || !initial_user_prompt) {
         return new Response(JSON.stringify({ error: 'Need repository and initial_user_prompt' }), {
@@ -86,7 +87,8 @@ export class ConversationOrchestratorDO_2026A {
         max_iterations: max_iterations || MAX_ITERATIONS,
         status: 'active',
         created_at: Date.now(),
-        updated_at: Date.now()
+        updated_at: Date.now(),
+        deepseek_system
       };
       
       await this.state.storage.put('conversation', this.conversation);
@@ -186,16 +188,25 @@ export class ConversationOrchestratorDO_2026A {
     
     console.log(`[DO:${this.state.id}] INIT state: Sending to DeepSeek`);
     
-    // Send initial prompt to DeepSeek
-    const deepseekResult = await callDeepSeek(
-      this.env.DEEPSEEK_API_KEY,
+    // Build initial conversation messages
+    const initialMessages = buildInitialMessages(
       this.conversation.initial_user_prompt,
       {
         repository: this.conversation.repository,
         branch: this.conversation.branch,
         iteration: this.conversation.iteration,
         max_iterations: this.conversation.max_iterations
-      }
+      },
+      this.conversation.deepseek_system
+    );
+    
+    // Store initial messages in conversation
+    this.conversation.conversation_messages = initialMessages;
+    
+    // Send initial prompt to DeepSeek
+    const deepseekResult = await callDeepSeek(
+      this.env.DEEPSEEK_API_KEY,
+      this.conversation.conversation_messages
     );
     
     if (!deepseekResult.success) {
@@ -209,6 +220,12 @@ export class ConversationOrchestratorDO_2026A {
       await this.stopConversation('deepseek_done');
       return;
     }
+    
+    // Add DeepSeek response to conversation history
+    this.conversation.conversation_messages.push({
+      role: 'assistant',
+      content: deepseekResult.response!
+    });
     
     this.conversation.last_deepseek_response = deepseekResult.response;
     this.conversation.iteration++;
@@ -383,6 +400,8 @@ export class ConversationOrchestratorDO_2026A {
       this.conversation.pending_event_id = undefined;
       this.conversation.last_event_seen_at = undefined;
       this.conversation.cooldown_started_at = undefined;
+      this.conversation.deepseek_system = undefined;
+      this.conversation.conversation_messages = undefined;
       
       await this.state.storage.put('conversation', this.conversation);
     }
@@ -420,16 +439,34 @@ export class ConversationOrchestratorDO_2026A {
     this.conversation.last_sent_event_id = eventId;
     this.conversation.last_openhands_response = messageContent;
     
-    // Send OpenHands response to DeepSeek
+    // Add OpenHands response to conversation history as user message
+    if (!this.conversation.conversation_messages) {
+      // Initialize conversation messages if not already done (shouldn't happen)
+      this.conversation.conversation_messages = buildInitialMessages(
+        this.conversation.initial_user_prompt,
+        {
+          repository: this.conversation.repository,
+          branch: this.conversation.branch,
+          iteration: this.conversation.iteration,
+          max_iterations: this.conversation.max_iterations
+        },
+        this.conversation.deepseek_system
+      );
+    }
+    
+    // Add iteration context to OpenHands response
+    const messageContentWithContext = `[Iteration ${this.conversation.iteration + 1} of ${this.conversation.max_iterations}]
+${messageContent}`;
+    
+    this.conversation.conversation_messages.push({
+      role: 'user',
+      content: messageContentWithContext
+    });
+    
+    // Send OpenHands response to DeepSeek with full conversation history
     const deepseekResult = await callDeepSeek(
       this.env.DEEPSEEK_API_KEY,
-      messageContent,
-      {
-        repository: this.conversation.repository,
-        branch: this.conversation.branch,
-        iteration: this.conversation.iteration,
-        max_iterations: this.conversation.max_iterations
-      }
+      this.conversation.conversation_messages
     );
     
     if (!deepseekResult.success) {
@@ -443,6 +480,12 @@ export class ConversationOrchestratorDO_2026A {
       await this.stopConversation('deepseek_done');
       return;
     }
+    
+    // Add DeepSeek response to conversation history
+    this.conversation.conversation_messages.push({
+      role: 'assistant',
+      content: deepseekResult.response!
+    });
     
     this.conversation.last_deepseek_response = deepseekResult.response;
     this.conversation.iteration++;

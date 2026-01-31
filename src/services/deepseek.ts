@@ -3,49 +3,18 @@ import { DEEPSEEK_TIMEOUT, STOP_TOKEN } from '../constants';
 import { DeepSeekResult } from '../types';
 
 /**
- * Call DeepSeek API with a prompt
+ * Call DeepSeek API with messages
  * @param apiKey DeepSeek API key
- * @param prompt The prompt to send
- * @param context Additional context (repository, iteration, etc.)
- * @param systemMessage Optional system message to override default
+ * @param messages The conversation messages to send (including system, user, assistant messages)
  * @returns DeepSeekResult with response or error
  */
 export async function callDeepSeek(
   apiKey: string,
-  prompt: string,
-  context: {
-    repository: string;
-    branch?: string;
-    iteration: number;
-    max_iterations: number;
-  },
-  systemMessage?: string
+  messages: Array<{role: string; content: string}>
 ): Promise<DeepSeekResult> {
   try {
-    // Use custom system message if provided, otherwise use default
-    const systemContent = systemMessage || `You are DeepSeek, an AI assistant working with OpenHands.
-    
-Repository: ${context.repository}${context.branch ? ` (branch: ${context.branch})` : ''}
-Iteration: ${context.iteration + 1} of ${context.max_iterations}
-
-IMPORTANT: Only include ${STOP_TOKEN} in your response if the task is COMPLETELY finished and no further action is needed.
-For multi-step tasks, do NOT include ${STOP_TOKEN} until all steps are done.
-Provide clear instructions for OpenHands to continue the work.`;
-
-    const deepseekPrompt = `${prompt}`;
-
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), DEEPSEEK_TIMEOUT);
-
-    const messages = [];
-    
-    // Add system message if we have one
-    if (systemContent) {
-      messages.push({ role: 'system', content: systemContent });
-    }
-    
-    // Add user message
-    messages.push({ role: 'user', content: deepseekPrompt });
 
     const response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
@@ -83,4 +52,45 @@ Provide clear instructions for OpenHands to continue the work.`;
       error: error.message || 'Unknown DeepSeek API error'
     };
   }
+}
+
+/**
+ * Build initial conversation messages for DeepSeek
+ * @param userPrompt The initial user prompt
+ * @param context Additional context (repository, iteration, etc.)
+ * @param systemMessage Optional custom system message
+ * @returns Array of DeepSeekMessage objects
+ */
+export function buildInitialMessages(
+  userPrompt: string,
+  context: {
+    repository: string;
+    branch?: string;
+    iteration: number;
+    max_iterations: number;
+  },
+  systemMessage?: string
+): Array<{role: string; content: string}> {
+  // Use custom system message if provided, otherwise use default
+  const systemContent = systemMessage || `You are DeepSeek, an AI assistant working with OpenHands.
+    
+Repository: ${context.repository}${context.branch ? ` (branch: ${context.branch})` : ''}
+
+IMPORTANT: Only include ${STOP_TOKEN} in your response if the task is COMPLETELY finished and no further action is needed.
+For multi-step tasks, do NOT include ${STOP_TOKEN} until all steps are done.
+Provide clear instructions for OpenHands to continue the work.`;
+
+  // Add iteration context to the user prompt
+  const userPromptWithContext = `[Iteration ${context.iteration + 1} of ${context.max_iterations}]
+${userPrompt}`;
+
+  const messages: Array<{role: string; content: string}> = [];
+  
+  // Add system message
+  messages.push({ role: 'system', content: systemContent });
+  
+  // Add user message with iteration context
+  messages.push({ role: 'user', content: userPromptWithContext });
+  
+  return messages;
 }
