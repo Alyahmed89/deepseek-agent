@@ -5,7 +5,7 @@ import { createOpenHandsConversation, getOpenHandsConversation, injectMessageToO
 import { MAX_ITERATIONS, STOP_TOKEN, ALARM_DELAY_INIT, ALARM_DELAY_WAITING } from '../constants';
 import { CloudflareBindings, ConversationData, ConversationState, OpenHandsMessage } from '../types';
 
-export class ConversationDO {
+export class ConversationDO_v2 {
   private state: DurableObjectState;
   private env: CloudflareBindings;
   private conversation: ConversationData | null = null;

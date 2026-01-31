@@ -1,7 +1,7 @@
 // Hono HTTP API only - NO business logic, NO API calls
 import { Hono } from 'hono';
 import { CloudflareBindings } from './types';
-import { ConversationDO } from './durable/ConversationDO';
+import { ConversationDO_v2 } from './durable/ConversationDO';
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 
@@ -135,4 +135,6 @@ app.post('/stop/:id', async (c) => {
 });
 
 export default app;
-export { ConversationDO };
+export { ConversationDO_v2 };
+// Export old class name for compatibility with existing Durable Objects
+export { ConversationDO_v2 as ConversationDO };
