@@ -5,7 +5,7 @@ import { createOpenHandsConversation, getOpenHandsConversation, injectMessageToO
 import { MAX_ITERATIONS, STOP_TOKEN, ALARM_DELAY_INIT, ALARM_DELAY_WAITING } from '../constants';
 import { CloudflareBindings, ConversationData, ConversationState, OpenHandsMessage } from '../types';
 
-export class ConversationDO_v2 {
+export class ConversationOrchestratorDO_2026A {
   private state: DurableObjectState;
   private env: CloudflareBindings;
   private conversation: ConversationData | null = null;
@@ -18,6 +18,12 @@ export class ConversationDO_v2 {
     this.state.blockConcurrencyWhile(async () => {
       this.conversation = await this.state.storage.get('conversation') || null;
     });
+  }
+  
+  // Alarm handler (called by Cloudflare when alarm triggers)
+  async alarm(): Promise<void> {
+    console.log(`[DO:${this.state.id}] Alarm triggered`);
+    await this.handleAlarm();
   }
   
   // HTTP endpoints for the Durable Object
@@ -40,15 +46,9 @@ export class ConversationDO_v2 {
       return this.handleStop();
     }
     
-    // Alarm endpoint (called by Cloudflare when alarm triggers)
-    if (path === '/alarm') {
-      await this.handleAlarm();
-      return new Response(null, { status: 204 });
-    }
-    
     return new Response(JSON.stringify({
       error: 'Not found',
-      available_endpoints: ['POST /initialize', 'GET /get-state', 'POST /stop', '/alarm']
+      available_endpoints: ['POST /initialize', 'GET /get-state', 'POST /stop']
     }), {
       status: 404,
       headers: { 'Content-Type': 'application/json' }
