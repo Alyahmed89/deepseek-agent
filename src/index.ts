@@ -1,5 +1,6 @@
-// Simplified DeepSeek Agent for OpenHands
-// Continuous loop: DeepSeek <-> OpenHands until "done" or stop condition
+// Automatic DeepSeek Agent for OpenHands
+// Simple flow: User -> DeepSeek -> OpenHands (automatic processing)
+// No /continue endpoint needed - OpenHands processes automatically
 
 import { Hono } from 'hono'
 
@@ -13,11 +14,12 @@ const app = new Hono<{ Bindings: CloudflareBindings }>()
 // Root endpoint
 app.get('/', (c) => {
   return c.json({ 
-    message: 'DeepSeek Agent for OpenHands (Simplified Flow)', 
+    message: 'DeepSeek Agent for OpenHands (Automatic Flow)', 
     endpoints: [
-      'POST /start - Start a new conversation loop',
-      'POST /continue/:conversation_id - Continue an existing conversation'
-    ] 
+      'POST /start - Start automatic task (DeepSeek -> OpenHands)'
+    ],
+    flow: 'User task -> DeepSeek analysis -> OpenHands automatic processing',
+    note: 'OpenHands processes tasks automatically after receiving DeepSeek instructions. No manual /continue calls needed.'
   })
 })
 
@@ -26,7 +28,11 @@ async function callDeepSeek(apiKey: string, prompt: string, context?: string): P
   try {
     const deepseekPrompt = context 
       ? `${context}\n\nCurrent prompt: ${prompt}`
-      : `You are DeepSeek agent helping with OpenHands. Please respond to the following:\n\n${prompt}`
+      : `You are DeepSeek, an AI assistant that helps with software development tasks. You are working with OpenHands, an automated development agent.
+
+IMPORTANT: Your response will be sent to OpenHands to execute. Provide clear, specific instructions. Do not include any special stop tokens or completion markers like "<<DONE>>". Just provide helpful instructions for OpenHands.
+
+${prompt}`
 
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 30000)
@@ -121,6 +127,7 @@ async function createOpenHandsConversation(
 }
 
 // Helper function to send message to existing OpenHands conversation
+// (Kept for potential future use, but not used in current automatic flow)
 async function sendToOpenHandsConversation(
   apiUrl: string,
   conversationId: string,
@@ -161,75 +168,39 @@ async function sendToOpenHandsConversation(
   }
 }
 
-// Helper function to check if we should stop the loop
-function shouldStopLoop(response: string): boolean {
-  const lowerResponse = response.toLowerCase();
-  
-  // Check for stop keywords
-  const stopKeywords = [
-    'done',
-    '[done]',
-    'stop',
-    'i\'m done',
-    'task completed',
-    'finished',
-    'complete',
-    'no further action needed',
-    'that\'s all',
-    'end of conversation',
-    'conversation complete'
-  ];
-  
-  for (const keyword of stopKeywords) {
-    if (lowerResponse.includes(keyword)) {
-      console.log(`Stop condition met: "${keyword}" found in response`);
-      return true;
-    }
-  }
-  
-  return false;
-}
-
-// Start a new conversation loop
+// Start automatic task (DeepSeek -> OpenHands)
 app.post('/start', async (c) => {
   try {
-    const { repository, branch, first_prompt } = await c.req.json()
+    const { repository, branch, task } = await c.req.json()
     
-    if (!repository || !first_prompt) {
-      return c.json({ error: 'Need repository and first_prompt (branch is optional)' }, 400)
+    if (!repository || !task) {
+      return c.json({ error: 'Need repository and task (branch is optional)' }, 400)
     }
 
-    console.log(`Starting new conversation loop for repository: ${repository}`)
+    console.log(`Starting automatic task for repository: ${repository}`)
+    console.log(`Task: "${task.substring(0, 100)}..."`)
     
-    // Step 1: Send first prompt to DeepSeek
-    console.log(`Sending first prompt to DeepSeek: "${first_prompt.substring(0, 100)}..."`)
+    // Step 1: Send task to DeepSeek for analysis and planning
+    const deepseekContext = `You are DeepSeek, an AI assistant that helps with software development tasks. You are working with OpenHands, an automated development agent.
+
+Repository: ${repository}${branch ? ` (branch: ${branch})` : ''}
+
+Your response will be sent to OpenHands to execute. Provide clear, specific instructions. Do not include any special stop tokens or completion markers. Just provide helpful instructions for OpenHands.`
+    
+    console.log(`Sending task to DeepSeek for analysis`)
     
     const deepseekResult = await callDeepSeek(
       c.env.DEEPSEEK_API_KEY,
-      first_prompt,
-      `You are DeepSeek agent helping with OpenHands. A user has requested help with their repository.
-      
-Repository: ${repository}${branch ? ` (branch: ${branch})` : ''}
-
-Please provide a helpful response to the user's request. Your response will be sent to OpenHands to start working on the task.`
+      task,
+      deepseekContext
     )
     
     if (!deepseekResult.success) {
       return c.json({ error: `DeepSeek API failed: ${deepseekResult.error}` }, 500)
     }
     
-    // Check if DeepSeek says "done" already
-    if (shouldStopLoop(deepseekResult.response!)) {
-      return c.json({
-        status: 'completed',
-        reason: 'DeepSeek indicated completion in first response',
-        deepseek_response: deepseekResult.response,
-        note: 'Loop stopped immediately as DeepSeek indicated the task is complete.'
-      })
-    }
-    
-    // Step 2: Send DeepSeek response to OpenHands
-    console.log(`Creating OpenHands conversation with DeepSeek's response`)
+    // Step 2: Send DeepSeek instructions to OpenHands
+    console.log(`Creating OpenHands conversation with DeepSeek's instructions`)
     
     const openhandsCreateResult = await createOpenHandsConversation(
       c.env.OPENHANDS_API_URL,
@@ -242,105 +213,23 @@ Please provide a helpful response to the user's request. Your response will be s
       return c.json({ error: `OpenHands create failed: ${openhandsCreateResult.error}` }, 500)
     }
     
-    // Return initial response
+    // Return success response
     return c.json({
-      status: 'loop_started',
-      conversation_id: openhandsCreateResult.conversationId,
-      deepseek_response: deepseekResult.response,
-      note: `Conversation loop started. OpenHands is processing the initial task. Use POST /continue/${openhandsCreateResult.conversationId} to continue the loop when OpenHands responds.`,
-      next_steps: [
-        'OpenHands will process the initial task',
-        'When OpenHands completes, call /continue endpoint with OpenHands response',
-        'DeepSeek will analyze the response and provide next steps',
-        'Loop continues until DeepSeek says "done"'
-      ]
+      success: true,
+      message: 'Task started successfully',
+      details: {
+        repository,
+        branch: branch || 'default',
+        task_preview: task.substring(0, 100) + (task.length > 100 ? '...' : ''),
+        deepseek_response_preview: deepseekResult.response!.substring(0, 200) + (deepseekResult.response!.length > 200 ? '...' : ''),
+        openhands_conversation_id: openhandsCreateResult.conversationId,
+        openhands_status_url: `${c.env.OPENHANDS_API_URL.replace(/\/api\/?$/, '')}/conversations/${openhandsCreateResult.conversationId}`,
+        note: 'OpenHands is now processing the task automatically. Check the OpenHands conversation for progress.'
+      }
     })
     
   } catch (error: any) {
     console.error(`Start endpoint error: ${error.message}`)
-    return c.json({ error: error.message }, 500)
-  }
-})
-
-// Continue an existing conversation loop
-app.post('/continue/:conversation_id', async (c) => {
-  try {
-    const conversationId = c.req.param('conversation_id')
-    const { openhands_response, iteration = 1, max_iterations = 10 } = await c.req.json()
-    
-    if (!openhands_response) {
-      return c.json({ error: 'Need openhands_response' }, 400)
-    }
-    
-    console.log(`Continuing conversation loop: ${conversationId} (iteration ${iteration})`)
-    
-    // Check max iterations
-    if (iteration >= max_iterations) {
-      return c.json({
-        status: 'completed',
-        reason: `Maximum iterations reached (${max_iterations})`,
-        note: 'Loop stopped due to maximum iteration limit.'
-      })
-    }
-    
-    // Step 1: Send OpenHands response to DeepSeek for analysis
-    console.log(`Sending OpenHands response to DeepSeek for analysis`)
-    
-    const deepseekResult = await callDeepSeek(
-      c.env.DEEPSEEK_API_KEY,
-      openhands_response,
-      `You are DeepSeek agent monitoring an OpenHands conversation.
-
-OpenHands has responded to your previous instructions. Analyze their response and provide next steps or instructions.
-
-If the task is complete or no further action is needed, say "done" or "task completed". Otherwise, provide clear next steps for OpenHands.`
-    )
-    
-    if (!deepseekResult.success) {
-      return c.json({ error: `DeepSeek API failed: ${deepseekResult.error}` }, 500)
-    }
-    
-    // Check if DeepSeek says "done"
-    if (shouldStopLoop(deepseekResult.response!)) {
-      return c.json({
-        status: 'completed',
-        conversation_id: conversationId,
-        iteration: iteration + 1,
-        reason: 'DeepSeek indicated completion',
-        deepseek_response: deepseekResult.response,
-        note: 'Loop completed as DeepSeek indicated the task is complete.'
-      })
-    }
-    
-    // Step 2: Send DeepSeek response back to OpenHands
-    console.log(`Sending DeepSeek response back to OpenHands`)
-    
-    const openhandsResult = await sendToOpenHandsConversation(
-      c.env.OPENHANDS_API_URL,
-      conversationId,
-      deepseekResult.response!
-    )
-    
-    if (!openhandsResult.success) {
-      return c.json({ error: `Failed to send to OpenHands: ${openhandsResult.error}` }, 500)
-    }
-    
-    // Return continuation response
-    return c.json({
-      status: 'loop_continuing',
-      conversation_id: conversationId,
-      iteration: iteration + 1,
-      deepseek_response: deepseekResult.response,
-      note: `Loop continued. OpenHands is processing the next steps. Call /continue/${conversationId} again when OpenHands responds.`,
-      next_steps: [
-        'OpenHands will process the new instructions',
-        'When OpenHands completes, call this endpoint again with the response',
-        `Remaining iterations: ${max_iterations - iteration - 1}`
-      ]
-    })
-    
-  } catch (error: any) {
-    console.error(`Continue endpoint error: ${error.message}`)
     return c.json({ error: error.message }, 500)
   }
 })
