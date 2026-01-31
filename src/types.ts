@@ -16,7 +16,7 @@ export interface ConversationData {
   state: ConversationState;
   initial_user_prompt: string;
   openhands_conversation_id?: string;
-  last_sent_to_deepseek_id?: string;
+  last_sent_event_id?: number; // Track last sent event ID for idempotency
   iteration: number;
   
   // Additional metadata
@@ -35,7 +35,29 @@ export interface ConversationData {
   updated_at: number;
 }
 
-// OpenHands message types
+// OpenHands event types
+export interface OpenHandsEvent {
+  id: number;
+  timestamp: string;
+  source: string;
+  message: string;
+  action: string;
+  args?: {
+    content?: string;
+    [key: string]: any;
+  };
+  content?: string;
+  extras?: {
+    agent_state?: string;
+    [key: string]: any;
+  };
+}
+
+export interface OpenHandsEventsResponse {
+  events: OpenHandsEvent[];
+}
+
+// OpenHands message types (deprecated - use events instead)
 export interface OpenHandsMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -88,6 +110,7 @@ export interface OpenHandsStatusResult {
   success: boolean;
   agent_state?: string;
   messages?: OpenHandsMessage[];
+  events?: OpenHandsEvent[];
   error?: string;
 }
 

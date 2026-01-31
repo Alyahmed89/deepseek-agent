@@ -64,16 +64,17 @@ export async function createOpenHandsConversation(
 }
 
 /**
- * Get OpenHands conversation status
+ * Get OpenHands conversation status and events
  * @param apiUrl OpenHands API base URL
  * @param conversationId Conversation ID to check
- * @returns OpenHandsStatusResult with agent state and messages or error
+ * @returns OpenHandsStatusResult with events or error
  */
 export async function getOpenHandsConversation(
   apiUrl: string,
   conversationId: string
 ): Promise<OpenHandsStatusResult> {
   try {
+    // Get conversation status
     const statusUrl = apiUrl.endsWith('/') 
       ? `${apiUrl}conversations/${conversationId}`
       : `${apiUrl}/conversations/${conversationId}`;
@@ -81,7 +82,7 @@ export async function getOpenHandsConversation(
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), OPENHANDS_TIMEOUT);
 
-    const response = await fetch(statusUrl, {
+    const statusResponse = await fetch(statusUrl, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal
@@ -89,17 +90,79 @@ export async function getOpenHandsConversation(
 
     clearTimeout(timeoutId);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`OpenHands status error: ${response.status} - ${errorText}`);
+    if (!statusResponse.ok) {
+      const errorText = await statusResponse.text();
+      throw new Error(`OpenHands status error: ${statusResponse.status} - ${errorText}`);
     }
 
-    const data = await response.json() as any;
+    const statusData = await statusResponse.json() as any;
+    
+    // Get latest agent message event using efficient pattern
+    // Use /events?limit=1&reverse=true to get only the latest event
+    let latestAgentMessageEvent: any = null;
+    let retryCount = 0;
+    const maxRetries = 2;
+    
+    while (retryCount <= maxRetries) {
+      try {
+        const eventsUrl = apiUrl.endsWith('/') 
+          ? `${apiUrl}conversations/${conversationId}/events?limit=1&reverse=true`
+          : `${apiUrl}/conversations/${conversationId}/events?limit=1&reverse=true`;
+
+        const eventsController = new AbortController();
+        const eventsTimeoutId = setTimeout(() => eventsController.abort(), OPENHANDS_TIMEOUT);
+
+        const eventsResponse = await fetch(eventsUrl, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          signal: eventsController.signal
+        });
+
+        clearTimeout(eventsTimeoutId);
+
+        if (!eventsResponse.ok) {
+          // If 500 error and we have retries left, retry
+          if (eventsResponse.status === 500 && retryCount < maxRetries) {
+            retryCount++;
+            console.log(`OpenHands events 500 error, retry ${retryCount}/${maxRetries}`);
+            await new Promise(resolve => setTimeout(resolve, 1000 * retryCount)); // Exponential backoff
+            continue;
+          }
+          
+          const errorText = await eventsResponse.text();
+          throw new Error(`OpenHands events error: ${eventsResponse.status} - ${errorText}`);
+        }
+
+        const eventsData = await eventsResponse.json() as any;
+        
+        // Check if the latest event is an agent message
+        if (eventsData.events && eventsData.events.length > 0) {
+          const latestEvent = eventsData.events[0];
+          if (latestEvent.source === 'agent' && latestEvent.action === 'message') {
+            latestAgentMessageEvent = latestEvent;
+          }
+        }
+        
+        break; // Success, exit retry loop
+        
+      } catch (error: any) {
+        if (retryCount < maxRetries) {
+          retryCount++;
+          console.log(`OpenHands events fetch error: ${error.message}, retry ${retryCount}/${maxRetries}`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+          continue;
+        }
+        throw error; // Re-throw after max retries
+      }
+    }
+
+    // Return events array with just the latest agent message (or empty)
+    const events = latestAgentMessageEvent ? [latestAgentMessageEvent] : [];
 
     return {
       success: true,
-      agent_state: data.agent_state,
-      messages: data.messages
+      agent_state: statusData.runtime_status, // Use runtime_status instead of agent_state
+      events
     };
 
   } catch (error: any) {

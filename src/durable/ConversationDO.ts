@@ -3,7 +3,7 @@
 import { callDeepSeek } from '../services/deepseek';
 import { createOpenHandsConversation, getOpenHandsConversation, injectMessageToOpenHands } from '../services/openhands';
 import { MAX_ITERATIONS, STOP_TOKEN, ALARM_DELAY_INIT, ALARM_DELAY_WAITING } from '../constants';
-import { CloudflareBindings, ConversationData, ConversationState, OpenHandsMessage } from '../types';
+import { CloudflareBindings, ConversationData, ConversationState, OpenHandsEvent } from '../types';
 
 export class ConversationOrchestratorDO_2026A {
   private state: DurableObjectState;
@@ -249,7 +249,7 @@ export class ConversationOrchestratorDO_2026A {
     
     console.log(`[DO:${this.state.id}] WAITING_OPENHANDS: Checking conversation ${this.conversation.openhands_conversation_id}`);
     
-    // Get OpenHands conversation status
+    // Get OpenHands conversation status and events
     const openhandsStatus = await getOpenHandsConversation(
       this.env.OPENHANDS_API_URL,
       this.conversation.openhands_conversation_id
@@ -260,35 +260,45 @@ export class ConversationOrchestratorDO_2026A {
       return;
     }
     
-    // Check if OpenHands is awaiting user input
-    if (openhandsStatus.agent_state !== 'awaiting_user_input') {
-      console.log(`[DO:${this.state.id}] OpenHands not ready (agent_state: ${openhandsStatus.agent_state}), rescheduling alarm`);
+    // Check if we have any agent message events
+    if (!openhandsStatus.events || openhandsStatus.events.length === 0) {
+      console.log(`[DO:${this.state.id}] No agent message events found`);
       // Reschedule alarm
       await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING);
       return;
     }
     
-    // Find latest agent message with id > last_sent_to_deepseek_id
-    const latestMessage = this.findLatestAgentMessage(
-      openhandsStatus.messages || [],
-      this.conversation.last_sent_to_deepseek_id
-    );
+    // With the new pattern, we only get the latest event (if it's an agent message)
+    const latestAgentMessage = openhandsStatus.events[0];
     
-    if (!latestMessage) {
-      console.log(`[DO:${this.state.id}] No new agent messages found`);
+    // Check if this is a new event (id > last_sent_event_id)
+    if (latestAgentMessage.id <= this.conversation.last_sent_event_id) {
+      console.log(`[DO:${this.state.id}] No new agent message events found (latest ID: ${latestAgentMessage.id}, last sent: ${this.conversation.last_sent_event_id})`);
       // Reschedule alarm
       await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING);
       return;
     }
     
-    console.log(`[DO:${this.state.id}] Found new agent message: ${latestMessage.id}`);
-    this.conversation.last_openhands_response = latestMessage.content;
-    this.conversation.last_sent_to_deepseek_id = latestMessage.id;
+    console.log(`[DO:${this.state.id}] Found new agent message event: ${latestAgentMessage.id}`);
+    
+    // Get message content: args.content ?? message
+    const messageContent = latestAgentMessage.args?.content || latestAgentMessage.message || latestAgentMessage.content || '';
+    
+    if (!messageContent.trim()) {
+      console.log(`[DO:${this.state.id}] Agent message has no content, skipping`);
+      // Update last_sent_event_id anyway to avoid infinite loop
+      this.conversation.last_sent_event_id = latestAgentMessage.id;
+      await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING);
+      return;
+    }
+    
+    this.conversation.last_openhands_response = messageContent;
+    this.conversation.last_sent_event_id = latestAgentMessage.id;
     
     // Send OpenHands response to DeepSeek
     const deepseekResult = await callDeepSeek(
       this.env.DEEPSEEK_API_KEY,
-      latestMessage.content,
+      messageContent,
       {
         repository: this.conversation.repository,
         branch: this.conversation.branch,
@@ -352,32 +362,6 @@ export class ConversationOrchestratorDO_2026A {
     } catch (error) {
       // Ignore errors if no alarm exists
     }
-  }
-  
-  private findLatestAgentMessage(messages: OpenHandsMessage[], lastSentId?: string): OpenHandsMessage | null {
-    // Filter for agent messages (assistant role)
-    const agentMessages = messages.filter(msg => msg.role === 'assistant');
-    
-    if (agentMessages.length === 0) {
-      return null;
-    }
-    
-    // Sort by timestamp descending (newest first)
-    agentMessages.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-    
-    // If no lastSentId, return the newest agent message
-    if (!lastSentId) {
-      return agentMessages[0];
-    }
-    
-    // Find the newest agent message with id > lastSentId
-    for (const msg of agentMessages) {
-      if (msg.id > lastSentId) {
-        return msg;
-      }
-    }
-    
-    return null;
   }
   
   private checkForDone(response: string): boolean {

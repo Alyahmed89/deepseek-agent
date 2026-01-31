@@ -25,8 +25,9 @@ export async function callDeepSeek(
 Repository: ${context.repository}${context.branch ? ` (branch: ${context.branch})` : ''}
 Iteration: ${context.iteration + 1} of ${context.max_iterations}
 
-IMPORTANT: If you're done with the task, include ${STOP_TOKEN} in your response. 
-Otherwise, provide clear instructions for OpenHands.
+IMPORTANT: Only include ${STOP_TOKEN} in your response if the task is COMPLETELY finished and no further action is needed.
+For multi-step tasks, do NOT include ${STOP_TOKEN} until all steps are done.
+Provide clear instructions for OpenHands to continue the work.
 
 ${prompt}`;
 
