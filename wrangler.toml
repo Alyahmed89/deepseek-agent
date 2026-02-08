@@ -6,14 +6,13 @@ compatibility_date = "2024-01-01"
 DEEPSEEK_API_KEY = "sk-57370a37c79f4b7db9dbd1e253c25b8b"
 OPENHANDS_API_URL = "https://openhands.anyapp.cfd/api"
 
-# Use same class name as production to avoid migration issues
-[[durable_objects.bindings]]
-name = "CONVERSATIONS"
-class_name = "ConversationDO_v2"
-
-# D1 database for flow runs tracking
+# D1 database for conversations and flow runs tracking
 [[d1_databases]]
 binding = "FLOW_RUNS_DB"
 database_name = "flow-runs-db"
 database_id = "ce8f2a2c-6e4b-4398-b73e-ba8f204f609a"
 migrations_dir = "migrations"
+
+# Scheduled cron job for processing conversations (runs every 2 seconds)
+[triggers]
+crons = ["*/2 * * * * *"]  # Every 2 seconds
