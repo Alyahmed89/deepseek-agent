@@ -569,15 +569,21 @@ export class ConversationOrchestratorDO_2026A {
       deepseekResult.response!
     );
     
-    // Complete if either AI says done OR external verification passes
-    if (doneData.done || verificationResult.shouldComplete) {
-      const reason = doneData.done ? 'deepseek_done' : `external_verification: ${verificationResult.completionReason}`;
+    // Complete only if external verification passes (NOT if AI says done)
+    if (verificationResult.shouldComplete) {
+      const reason = `external_verification: ${verificationResult.completionReason}`;
       console.log(`[DO:${this.state.id}] Completion triggered: ${reason}`);
       console.log(`[DO:${this.state.id}] Verification details: ${JSON.stringify(verificationResult.verificationResult)}`);
       
       await this.handleDoneResponse(deepseekResult.response!, reason);
       await this.stopConversation(reason);
       return;
+    }
+    
+    // If DeepSeek says it's done but external verification doesn't agree, continue anyway
+    if (doneData.done) {
+      console.log(`[DO:${this.state.id}] DeepSeek indicated completion but continuing per configuration`);
+      // Don't stop the conversation, just log and continue
     }
     
     // Add DeepSeek response to conversation history
@@ -1256,15 +1262,21 @@ ${messageContent}`;
       deepseekResult.response!
     );
     
-    // Complete if either AI says done OR external verification passes
-    if (doneData.done || verificationResult.shouldComplete) {
-      const reason = doneData.done ? 'deepseek_done' : `external_verification: ${verificationResult.completionReason}`;
+    // Complete only if external verification passes (NOT if AI says done)
+    if (verificationResult.shouldComplete) {
+      const reason = `external_verification: ${verificationResult.completionReason}`;
       console.log(`[DO:${this.state.id}] Completion triggered: ${reason}`);
       console.log(`[DO:${this.state.id}] Verification details: ${JSON.stringify(verificationResult.verificationResult)}`);
       
       await this.handleDoneResponse(deepseekResult.response!, reason);
       await this.stopConversation(reason);
       return;
+    }
+    
+    // If DeepSeek says it's done but external verification doesn't agree, continue anyway
+    if (doneData.done) {
+      console.log(`[DO:${this.state.id}] DeepSeek indicated completion but continuing per configuration`);
+      // Don't stop the conversation, just log and continue
     }
     
     // Add DeepSeek response to conversation history
