@@ -6,7 +6,7 @@ account_id = "e39371fc55a5c9ef7ed83e16660bd7bb"
 [vars]
 DEEPSEEK_API_KEY = "sk-57370a37c79f4b7db9dbd1e253c25b8b"
 OPENHANDS_API_URL = "https://openhands.anyapp.cfd/api"
-BASE_URL = "https://deepseek-agent.alyahmed89.workers.dev"
+BASE_URL = "https://deepseek-agent.alghamdimo89.workers.dev"
 
 # Use actual exported class name
 [[durable_objects.bindings]]
