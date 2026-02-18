@@ -304,6 +304,9 @@ export class ConversationOrchestratorDO_2026A {
       let nextStepIndex = this.flow.current_step + 1; // Default: next sequential step
       
       console.log(`[DO:${this.state.id}] Current step index: ${this.flow.current_step}, steps length: ${this.flow.steps.length}`);
+      if (this.flow.steps.length <= 1) {
+        console.warn(`[DO:${this.state.id}] WARNING: Only ${this.flow.steps.length} step(s) loaded! Flow will end after first step.`);
+      }
       if (currentStep) {
         console.log(`[DO:${this.state.id}] Current step ID: ${currentStep.step_id}, title: ${currentStep.title}`);
       }
