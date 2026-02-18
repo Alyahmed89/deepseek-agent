@@ -215,8 +215,8 @@ export class ConversationOrchestratorDO_2026A {
       await this.state.storage.put('flow', this.flow);
       
       // Schedule alarm to start polling for responses IMMEDIATELY
-      await this.state.storage.setAlarm(Date.now() + 1000); // Start polling in 1 second
-      console.log(`[DO:${this.state.id}] Scheduled alarm for 1 second from now to start polling`);
+      await this.state.storage.setAlarm(Date.now() + 100); // Start polling in 100ms
+      console.log(`[DO:${this.state.id}] Scheduled alarm for 100ms from now to start polling`);
       
       // Save flow run to database
       if (this.env.FLOW_RUNS_DB) {
@@ -454,8 +454,8 @@ export class ConversationOrchestratorDO_2026A {
     await this.state.storage.put('flow', this.flow);
     
     // Schedule alarm to start polling for responses IMMEDIATELY
-    await this.state.storage.setAlarm(Date.now() + 1000); // Start polling in 1 second
-    console.log(`[DO:${this.state.id}] Scheduled alarm for 1 second from now to start polling`);
+    await this.state.storage.setAlarm(Date.now() + 100); // Start polling in 100ms
+    console.log(`[DO:${this.state.id}] Scheduled alarm for 100ms from now to start polling`);
     
     console.log(`[DO:${this.state.id}] Waiting for OpenHands response...`);
   }
@@ -816,9 +816,9 @@ export class ConversationOrchestratorDO_2026A {
         await this.state.storage.put('flow', this.flow);
         
       } else {
-        // No response yet, check again in 2 seconds (more aggressive polling)
-        console.log(`[DO:${this.state.id}] No new assistant response found. Checking again in 2 seconds.`);
-        await this.state.storage.setAlarm(Date.now() + 2 * 1000);
+        // No response yet, check again in 100ms (ULTRA aggressive polling)
+        console.log(`[DO:${this.state.id}] No new assistant response found. Checking again in 100ms.`);
+        await this.state.storage.setAlarm(Date.now() + 100);
       }
       
     } catch (error: any) {
