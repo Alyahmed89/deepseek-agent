@@ -195,45 +195,31 @@ export class ConversationOrchestratorDO_2026A {
     }
     
     try {
-      // Try to get all possible columns - handle mixed schema
-      // First check what columns exist by trying a flexible query
+      // Try with new column names first (title, instructions, order_index)
       const result = await this.env.FLOW_RUNS_DB.prepare(
-        `SELECT 
-          id as step_id,
-          COALESCE(title, 'Step ' || COALESCE(order_index, step_number, 1)) as title,
-          COALESCE(instructions, prompt, 'No instructions provided') as instructions,
-          COALESCE(order_index, step_number, 1) as order_index
-        FROM flow_steps 
-        WHERE flow_id = ? 
-        ORDER BY COALESCE(order_index, step_number, 1)`
+        'SELECT id as step_id, title, instructions, order_index FROM flow_steps WHERE flow_id = ? ORDER BY order_index'
       ).bind(flowId).all();
       
-      console.log(`[DO:${this.state.id}] Loaded ${result.results?.length || 0} steps for flow ${flowId}`);
+      console.log(`[DO:${this.state.id}] Loaded ${result.results?.length || 0} steps with new schema`);
       if (result.results && result.results.length > 0) {
         console.log(`[DO:${this.state.id}] First step: ${JSON.stringify(result.results[0])}`);
+        return result.results;
       }
       
-      return result.results || [];
+      return [];
     } catch (error: any) {
-      console.error(`[DO:${this.state.id}] Error loading steps: ${error.message}`);
-      // Try fallback query
+      console.error(`[DO:${this.state.id}] Error loading steps with new schema: ${error.message}`);
+      
+      // If new schema fails (columns don't exist), try old schema
       try {
-        // Simple query that should work with any schema
-        const fallbackResult = await this.env.FLOW_RUNS_DB.prepare(
-          'SELECT id as step_id FROM flow_steps WHERE flow_id = ?'
+        const oldResult = await this.env.FLOW_RUNS_DB.prepare(
+          'SELECT id as step_id, prompt as instructions, step_number as order_index FROM flow_steps WHERE flow_id = ? ORDER BY step_number'
         ).bind(flowId).all();
         
-        console.log(`[DO:${this.state.id}] Fallback loaded ${fallbackResult.results?.length || 0} steps`);
-        // Create basic steps with just IDs
-        const steps = fallbackResult.results || [];
-        return steps.map((step, index) => ({
-          step_id: step.step_id,
-          title: `Step ${index + 1}`,
-          instructions: 'No instructions provided',
-          order_index: index
-        }));
-      } catch (fallbackError: any) {
-        console.error(`[DO:${this.state.id}] Fallback also failed: ${fallbackError.message}`);
+        console.log(`[DO:${this.state.id}] Loaded ${oldResult.results?.length || 0} steps with old schema`);
+        return oldResult.results || [];
+      } catch (oldError: any) {
+        console.error(`[DO:${this.state.id}] Error loading steps with old schema: ${oldError.message}`);
         return [];
       }
     }
