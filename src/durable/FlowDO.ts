@@ -451,6 +451,8 @@ export class ConversationOrchestratorDO_2026A {
         webhookUrl
       );
       
+      let injectionSucceeded = injectResult.success;
+      
       // If injection fails, check if conversation is stopped and create new one
       if (!injectResult.success) {
         console.error(`[DO:${this.state.id}] Failed to send step to OpenHands: ${injectResult.error}`);
@@ -485,6 +487,8 @@ export class ConversationOrchestratorDO_2026A {
                 webhookUrl
               );
               
+              injectionSucceeded = injectResult.success;
+              
               if (!injectResult.success) {
                 console.error(`[DO:${this.state.id}] Failed to send step to new conversation: ${injectResult.error}`);
               } else {
@@ -502,15 +506,24 @@ export class ConversationOrchestratorDO_2026A {
       } else {
         console.log(`[DO:${this.state.id}] Step sent to OpenHands conversation: ${this.flow.openhands_conversation_id}`);
       }
+      
+      // Only set state to WAITING_RESPONSE if injection succeeded
+      if (injectionSucceeded) {
+        this.flow.state = 'WAITING_RESPONSE';
+        console.log(`[DO:${this.state.id}] Waiting for OpenHands response... (polling on status check)`);
+      } else {
+        // Keep state as SENDING_STEP so we can retry on next status check
+        this.flow.state = 'SENDING_STEP';
+        console.log(`[DO:${this.state.id}] Injection failed, keeping state as SENDING_STEP to retry on next status check`);
+      }
+      
+      await this.state.storage.put('flow', this.flow);
     } else {
       console.error(`[DO:${this.state.id}] No OpenHands conversation ID available`);
+      // Keep state as SENDING_STEP
+      this.flow.state = 'SENDING_STEP';
+      await this.state.storage.put('flow', this.flow);
     }
-    
-    // Set state to waiting for response
-    this.flow.state = 'WAITING_RESPONSE';
-    await this.state.storage.put('flow', this.flow);
-    
-    console.log(`[DO:${this.state.id}] Waiting for OpenHands response... (polling on status check)`);
   }
   
   // Handle OpenHands response with conditional branching
