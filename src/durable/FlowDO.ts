@@ -441,14 +441,15 @@ export class ConversationOrchestratorDO_2026A {
       // Add step instructions
       message += `\n\n${instructions}`;
       
-      const webhookUrl = `${this.env.BASE_URL}/response/${this.state.id.toString()}`;
+      // Don't include webhook_url for now - it causes injection to fail
+      // const webhookUrl = `${this.env.BASE_URL}/response/${this.state.id.toString()}`;
       
       // Try to send to existing conversation first
       let injectResult = await injectMessageToOpenHands(
         this.env.OPENHANDS_API_URL,
         this.flow.openhands_conversation_id,
-        message,
-        webhookUrl
+        message
+        // webhookUrl // Temporarily disabled - causes "Internal Server Error"
       );
       
       let injectionSucceeded = injectResult.success;
@@ -473,8 +474,13 @@ export class ConversationOrchestratorDO_2026A {
           if (agentState === 'stopped') {
             console.log(`[DO:${this.state.id}] Conversation is stopped, creating new conversation`);
             
-            // Create new conversation
-            const createResult = await createOpenHandsConversation(this.env.OPENHANDS_API_URL);
+            // Create new conversation with repository and branch
+            const createResult = await createOpenHandsConversation(
+              this.env.OPENHANDS_API_URL,
+              message, // Use the current step message as initial message
+              this.flow.repository || 'Alyahmed89/eta', // Default repository
+              this.flow.branch || 'main' // Default branch
+            );
             if (createResult.success && createResult.conversationId) {
               this.flow.openhands_conversation_id = createResult.conversationId;
               console.log(`[DO:${this.state.id}] Created new conversation: ${createResult.conversationId}`);
@@ -483,8 +489,8 @@ export class ConversationOrchestratorDO_2026A {
               injectResult = await injectMessageToOpenHands(
                 this.env.OPENHANDS_API_URL,
                 this.flow.openhands_conversation_id,
-                message,
-                webhookUrl
+                message
+                // webhookUrl // Temporarily disabled
               );
               
               injectionSucceeded = injectResult.success;
