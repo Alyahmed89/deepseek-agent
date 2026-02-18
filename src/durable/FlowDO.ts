@@ -1,5 +1,5 @@
 // Ultra-minimal Flow Durable Object
-import { createOpenHandsConversation, injectMessageToOpenHands } from '../services/openhands';
+import { createOpenHandsConversation, injectMessageToOpenHands, getOpenHandsConversation } from '../services/openhands';
 import { ALARM_DELAY_INIT, ALARM_DELAY_WAITING, ALARM_DELAY_ACTIVE, MIN_POLL_INTERVAL } from '../constants';
 
 interface FlowDOEnv {
@@ -442,19 +442,66 @@ export class ConversationOrchestratorDO_2026A {
       message += `\n\n${instructions}`;
       
       const webhookUrl = `${this.env.BASE_URL}/response/${this.state.id.toString()}`;
-      const injectResult = await injectMessageToOpenHands(
+      
+      // Try to send to existing conversation first
+      let injectResult = await injectMessageToOpenHands(
         this.env.OPENHANDS_API_URL,
         this.flow.openhands_conversation_id,
         message,
         webhookUrl
       );
       
+      // If injection fails, check if conversation is stopped and create new one
       if (!injectResult.success) {
         console.error(`[DO:${this.state.id}] Failed to send step to OpenHands: ${injectResult.error}`);
-        // Still set state to waiting for response, but log error
+        console.log(`[DO:${this.state.id}] Checking if conversation is stopped, will create new one if needed`);
+        
+        // Check conversation status
+        const statusResult = await getOpenHandsConversation(
+          this.env.OPENHANDS_API_URL,
+          this.flow.openhands_conversation_id,
+          true // bypass cache
+        );
+        
+        if (statusResult.success && statusResult.events) {
+          // Check if conversation is stopped
+          const latestEvent = statusResult.events[0]; // Newest first
+          const agentState = latestEvent.agent_state || latestEvent.args?.agent_state || latestEvent.extras?.agent_state;
+          
+          if (agentState === 'stopped') {
+            console.log(`[DO:${this.state.id}] Conversation is stopped, creating new conversation`);
+            
+            // Create new conversation
+            const createResult = await createOpenHandsConversation(this.env.OPENHANDS_API_URL);
+            if (createResult.success && createResult.conversationId) {
+              this.flow.openhands_conversation_id = createResult.conversationId;
+              console.log(`[DO:${this.state.id}] Created new conversation: ${createResult.conversationId}`);
+              
+              // Retry injection with new conversation
+              injectResult = await injectMessageToOpenHands(
+                this.env.OPENHANDS_API_URL,
+                this.flow.openhands_conversation_id,
+                message,
+                webhookUrl
+              );
+              
+              if (!injectResult.success) {
+                console.error(`[DO:${this.state.id}] Failed to send step to new conversation: ${injectResult.error}`);
+              } else {
+                console.log(`[DO:${this.state.id}] Step sent to new OpenHands conversation: ${this.flow.openhands_conversation_id}`);
+              }
+            } else {
+              console.error(`[DO:${this.state.id}] Failed to create new conversation: ${createResult.error}`);
+            }
+          } else {
+            console.log(`[DO:${this.state.id}] Conversation not stopped (agent_state: ${agentState}), injection error: ${injectResult.error}`);
+          }
+        } else {
+          console.error(`[DO:${this.state.id}] Failed to check conversation status: ${statusResult.error}`);
+        }
+      } else {
+        console.log(`[DO:${this.state.id}] Step sent to OpenHands conversation: ${this.flow.openhands_conversation_id}`);
       }
-      
-      console.log(`[DO:${this.state.id}] Step sent to OpenHands conversation: ${this.flow.openhands_conversation_id}`);
     } else {
       console.error(`[DO:${this.state.id}] No OpenHands conversation ID available`);
     }
