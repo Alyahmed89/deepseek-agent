@@ -1,5 +1,5 @@
 // Database service for flow runs tracking
-import { FlowRunData, IterationData, ProjectFact, StepData } from '../types';
+import { FlowRunData, IterationData, StepData } from '../types';
 
 /**
  * Save a flow run to the database
@@ -188,23 +188,7 @@ export function generateFlowRunId(): string {
   return `flow_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
-/**
- * Get all project facts from the database
- * @param db D1Database instance (PROJECT_FACTS_DB)
- * @returns Promise with array of project facts
- */
-export async function getProjectFacts(db: D1Database): Promise<ProjectFact[]> {
-  try {
-    const result = await db.prepare(`
-      SELECT tag, value FROM project_facts
-    `).all();
-    
-    return result.results as unknown as ProjectFact[];
-  } catch (error: any) {
-    console.error(`[DATABASE] Error getting project facts: ${error.message}`);
-    return [];
-  }
-}
+
 
 // ==========================================================================
 // TASK MANAGEMENT FUNCTIONS

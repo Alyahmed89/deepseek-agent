@@ -6,7 +6,6 @@ export interface CloudflareBindings {
   OPENHANDS_API_URL: string;
   CONVERSATIONS: DurableObjectNamespace;
   FLOW_RUNS_DB?: D1Database; // Optional - may not be configured
-  PROJECT_FACTS_DB?: D1Database; // Optional - for authoritative project facts
   RATE_LIMIT_KV?: KVNamespace; // Optional - for rate limiting
 }
 
@@ -52,8 +51,7 @@ export interface ConversationData {
   // DeepSeek conversation history (maintains context across iterations)
   conversation_messages?: DeepSeekMessage[];
   
-  // Project facts for authoritative command/URL/path enforcement
-  project_facts?: ProjectFact[];
+
 
   // Iteration completion tracking
   pending_actions?: PendingAction[]; // Track ActionEvents waiting for ObservationEvents
@@ -234,11 +232,7 @@ export interface DoneResponseData {
   stop_reason?: string;
 }
 
-// Project facts for authoritative command/URL/path enforcement
-export interface ProjectFact {
-  tag: string;
-  value: string;
-}
+
 
 // Task data for deterministic task system
 export interface TaskData {
