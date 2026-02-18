@@ -95,12 +95,16 @@ export class ConversationOrchestratorDO_2026A {
         });
       }
       
-      // Create OpenHands conversation
+      // Create OpenHands conversation with first step as initial message
       console.log(`[DO:${this.state.id}] Creating OpenHands conversation for repository: ${flowDefinition.repository}, branch: ${flowDefinition.branch || 'main'}`);
+      
+      // Get first step to use as initial message
+      const firstStep = steps[0];
+      const initialMessage = `Execute step 1: ${firstStep.title}\n\n${firstStep.instructions}`;
       
       const openhandsResult = await createOpenHandsConversation(
         this.env.OPENHANDS_API_URL,
-        `Starting flow: ${flowDefinition.name}`,
+        initialMessage,
         flowDefinition.repository,
         flowDefinition.branch || 'main'
       );
@@ -113,13 +117,13 @@ export class ConversationOrchestratorDO_2026A {
         });
       }
       
-      // Initialize flow
+      // Initialize flow - step 1 already sent as initial message
       this.flow = {
         id: this.state.id.toString(),
         flow_id,
         current_step: 0,
         steps,
-        state: 'SENDING_STEP',
+        state: 'WAITING_RESPONSE', // Already sent step 1 as initial message
         created_at: Date.now(),
         openhands_conversation_id: openhandsResult.conversationId,
         repository: flowDefinition.repository,
@@ -128,8 +132,7 @@ export class ConversationOrchestratorDO_2026A {
       
       await this.state.storage.put('flow', this.flow);
       
-      // Schedule alarm to send first step
-      await this.state.storage.setAlarm(Date.now() + 1000);
+      // No need to schedule alarm - already waiting for response to step 1
       
       console.log(`[DO:${this.state.id}] Flow initialized with ${steps.length} steps, OpenHands conversation: ${openhandsResult.conversationId}`);
       
