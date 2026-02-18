@@ -19,12 +19,18 @@ export class ConversationOrchestratorDO_2026A {
       title: string;
       instructions: string;
       order_index: number;
+      task_id?: string;
+      requires_task?: boolean;
     }>;
     state: 'LOADING' | 'SENDING_STEP' | 'WAITING_RESPONSE' | 'DONE';
     created_at: number;
     openhands_conversation_id?: string;
     repository?: string;
     branch?: string;
+    last_step_response?: string;
+    current_task_id?: string;
+    current_task_title?: string;
+    current_task_description?: string;
   } | null = null;
   
   constructor(state: DurableObjectState, env: any) {
@@ -106,12 +112,71 @@ export class ConversationOrchestratorDO_2026A {
       // Get first step to use as initial message
       const firstStep = steps[0];
       if (!firstStep) {
-        console.error(`[DO:${this.state.id}] No steps found for flow ${flowId}`);
+        console.error(`[DO:${this.state.id}] No steps found for flow ${flow_id}`);
         return new Response(JSON.stringify({ error: 'No steps found for flow' }), { status: 400 });
       }
       const firstStepTitle = firstStep.title || 'Step 1';
       const instructions = firstStep.instructions || 'No instructions provided';
-      const initialMessage = `Execute step 1: ${firstStepTitle}\n\n${instructions}`;
+      let initialMessage = `Execute step 1: ${firstStepTitle}`;
+      
+      // Variables to store task data for the flow object
+      let currentTaskId: string | undefined;
+      let currentTaskTitle: string | undefined;
+      let currentTaskDescription: string | undefined;
+      
+      // Check for task injection for first step
+      if (firstStep.requires_task && flow_id && this.env.FLOW_RUNS_DB) {
+        console.log(`[DO:${this.state.id}] First step requires dynamic task, fetching first pending task for flow: ${flow_id}`);
+        try {
+          const { getFirstPendingTask } = await import('../services/database');
+          const pendingTask = await getFirstPendingTask(this.env.FLOW_RUNS_DB, flow_id);
+          if (pendingTask) {
+            initialMessage += `\n\n=== TASK ===`;
+            initialMessage += `\nTitle: ${pendingTask.title}`;
+            if (pendingTask.description) {
+              initialMessage += `\nDescription: ${pendingTask.description}`;
+            }
+            initialMessage += `\n=== END TASK ===\n`;
+            
+            // Store task data for the flow object
+            currentTaskId = pendingTask.id;
+            currentTaskTitle = pendingTask.title;
+            currentTaskDescription = pendingTask.description || undefined;
+            
+            console.log(`[DO:${this.state.id}] Injected task for first step: ${pendingTask.title}`);
+          } else {
+            console.log(`[DO:${this.state.id}] No pending tasks found for flow: ${flow_id}`);
+          }
+        } catch (error: any) {
+          console.error(`[DO:${this.state.id}] Error fetching pending task for first step: ${error.message}`);
+        }
+      } else if (firstStep.task_id && this.env.FLOW_RUNS_DB) {
+        console.log(`[DO:${this.state.id}] First step has static task_id: ${firstStep.task_id}`);
+        try {
+          const { getTaskData } = await import('../services/database');
+          const taskData = await getTaskData(this.env.FLOW_RUNS_DB, firstStep.task_id);
+          if (taskData) {
+            initialMessage += `\n\n=== TASK ===`;
+            initialMessage += `\nTitle: ${taskData.title}`;
+            if (taskData.description) {
+              initialMessage += `\nDescription: ${taskData.description}`;
+            }
+            initialMessage += `\n=== END TASK ===\n`;
+            
+            // Store task data for the flow object
+            currentTaskId = firstStep.task_id;
+            currentTaskTitle = taskData.title;
+            currentTaskDescription = taskData.description || undefined;
+            
+            console.log(`[DO:${this.state.id}] Injected task for first step: ${taskData.title}`);
+          }
+        } catch (error: any) {
+          console.error(`[DO:${this.state.id}] Error fetching task data for first step: ${error.message}`);
+        }
+      }
+      
+      // Add step instructions
+      initialMessage += `\n\n${instructions}`;
       
       const openhandsResult = await createOpenHandsConversation(
         this.env.OPENHANDS_API_URL,
@@ -138,7 +203,10 @@ export class ConversationOrchestratorDO_2026A {
         created_at: Date.now(),
         openhands_conversation_id: openhandsResult.conversationId,
         repository: flowDefinition.repository,
-        branch: flowDefinition.branch || 'main'
+        branch: flowDefinition.branch || 'main',
+        current_task_id: currentTaskId,
+        current_task_title: currentTaskTitle,
+        current_task_description: currentTaskDescription
       };
       
       await this.state.storage.put('flow', this.flow);
@@ -195,9 +263,9 @@ export class ConversationOrchestratorDO_2026A {
     }
     
     try {
-      // Try with new column names first (title, instructions, order_index)
+      // Try with new column names first (title, instructions, order_index, task_id, requires_task)
       const result = await this.env.FLOW_RUNS_DB.prepare(
-        'SELECT id as step_id, title, instructions, order_index FROM flow_steps WHERE flow_id = ? ORDER BY order_index'
+        'SELECT id as step_id, title, instructions, order_index, task_id, requires_task FROM flow_steps WHERE flow_id = ? ORDER BY order_index'
       ).bind(flowId).all();
       
       console.log(`[DO:${this.state.id}] Loaded ${result.results?.length || 0} steps with new schema for flow ${flowId}`);
@@ -255,7 +323,61 @@ export class ConversationOrchestratorDO_2026A {
     // Send step to OpenHands
     if (this.flow.openhands_conversation_id) {
       const instructions = step.instructions || 'No instructions provided';
-      const message = `Execute step ${stepIndex + 1}: ${stepTitle}\n\n${instructions}`;
+      let message = `Execute step ${stepIndex + 1}: ${stepTitle}`;
+      
+      // Check for task injection
+      if (step.requires_task && this.flow.flow_id && this.env.FLOW_RUNS_DB) {
+        console.log(`[DO:${this.state.id}] Step requires dynamic task, fetching first pending task for flow: ${this.flow.flow_id}`);
+        try {
+          const { getFirstPendingTask } = await import('../services/database');
+          const pendingTask = await getFirstPendingTask(this.env.FLOW_RUNS_DB, this.flow.flow_id);
+          if (pendingTask) {
+            message += `\n\n=== TASK ===`;
+            message += `\nTitle: ${pendingTask.title}`;
+            if (pendingTask.description) {
+              message += `\nDescription: ${pendingTask.description}`;
+            }
+            message += `\n=== END TASK ===\n`;
+            
+            // Store task data for trigger handling
+            this.flow.current_task_id = pendingTask.id;
+            this.flow.current_task_title = pendingTask.title;
+            this.flow.current_task_description = pendingTask.description || undefined;
+            
+            console.log(`[DO:${this.state.id}] Injected task: ${pendingTask.title}`);
+          } else {
+            console.log(`[DO:${this.state.id}] No pending tasks found for flow: ${this.flow.flow_id}`);
+          }
+        } catch (error: any) {
+          console.error(`[DO:${this.state.id}] Error fetching pending task: ${error.message}`);
+        }
+      } else if (step.task_id && this.env.FLOW_RUNS_DB) {
+        console.log(`[DO:${this.state.id}] Step has static task_id: ${step.task_id}`);
+        try {
+          const { getTaskData } = await import('../services/database');
+          const taskData = await getTaskData(this.env.FLOW_RUNS_DB, step.task_id);
+          if (taskData) {
+            message += `\n\n=== TASK ===`;
+            message += `\nTitle: ${taskData.title}`;
+            if (taskData.description) {
+              message += `\nDescription: ${taskData.description}`;
+            }
+            message += `\n=== END TASK ===\n`;
+            
+            // Store task data for trigger handling
+            this.flow.current_task_id = step.task_id;
+            this.flow.current_task_title = taskData.title;
+            this.flow.current_task_description = taskData.description || undefined;
+            
+            console.log(`[DO:${this.state.id}] Injected task: ${taskData.title}`);
+          }
+        } catch (error: any) {
+          console.error(`[DO:${this.state.id}] Error fetching task data: ${error.message}`);
+        }
+      }
+      
+      // Add step instructions
+      message += `\n\n${instructions}`;
       
       const injectResult = await injectMessageToOpenHands(
         this.env.OPENHANDS_API_URL,
