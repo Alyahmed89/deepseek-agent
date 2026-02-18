@@ -195,35 +195,58 @@ export class ConversationOrchestratorDO_2026A {
     }
     
     try {
-      // Try with new column names first (title, instructions, order_index)
+      // Try to get all possible columns - handle mixed schema
+      // First check what columns exist by trying a flexible query
       const result = await this.env.FLOW_RUNS_DB.prepare(
-        'SELECT id as step_id, title, instructions, order_index FROM flow_steps WHERE flow_id = ? ORDER BY order_index'
+        `SELECT 
+          id as step_id,
+          COALESCE(title, 'Step ' || COALESCE(order_index, step_number, 1)) as title,
+          COALESCE(instructions, prompt, 'No instructions provided') as instructions,
+          COALESCE(order_index, step_number, 1) as order_index
+        FROM flow_steps 
+        WHERE flow_id = ? 
+        ORDER BY COALESCE(order_index, step_number, 1)`
       ).bind(flowId).all();
       
+      console.log(`[DO:${this.state.id}] Loaded ${result.results?.length || 0} steps for flow ${flowId}`);
       if (result.results && result.results.length > 0) {
-        return result.results;
+        console.log(`[DO:${this.state.id}] First step: ${JSON.stringify(result.results[0])}`);
       }
       
-      // If no results, try with old column names (prompt, step_number)
-      const oldResult = await this.env.FLOW_RUNS_DB.prepare(
-        'SELECT id as step_id, prompt as instructions, step_number as order_index FROM flow_steps WHERE flow_id = ? ORDER BY step_number'
-      ).bind(flowId).all();
-      
-      // Add empty title for old schema
-      const steps = oldResult.results || [];
-      return steps.map(step => ({
-        ...step,
-        title: step.title || `Step ${step.order_index}`
-      }));
+      return result.results || [];
     } catch (error: any) {
       console.error(`[DO:${this.state.id}] Error loading steps: ${error.message}`);
-      return [];
+      // Try fallback query
+      try {
+        // Simple query that should work with any schema
+        const fallbackResult = await this.env.FLOW_RUNS_DB.prepare(
+          'SELECT id as step_id FROM flow_steps WHERE flow_id = ?'
+        ).bind(flowId).all();
+        
+        console.log(`[DO:${this.state.id}] Fallback loaded ${fallbackResult.results?.length || 0} steps`);
+        // Create basic steps with just IDs
+        const steps = fallbackResult.results || [];
+        return steps.map((step, index) => ({
+          step_id: step.step_id,
+          title: `Step ${index + 1}`,
+          instructions: 'No instructions provided',
+          order_index: index
+        }));
+      } catch (fallbackError: any) {
+        console.error(`[DO:${this.state.id}] Fallback also failed: ${fallbackError.message}`);
+        return [];
+      }
     }
   }
   
   // Send current step to OpenHands
   private async sendCurrentStep(): Promise<void> {
-    if (!this.flow) return;
+    if (!this.flow) {
+      console.log(`[DO:${this.state.id}] sendCurrentStep: No flow`);
+      return;
+    }
+    
+    console.log(`[DO:${this.state.id}] sendCurrentStep: state=${this.flow.state}, current_step=${this.flow.current_step}, steps.length=${this.flow.steps.length}`);
     
     const stepIndex = this.flow.current_step;
     if (stepIndex >= this.flow.steps.length) {
@@ -288,6 +311,11 @@ export class ConversationOrchestratorDO_2026A {
       const currentStep = this.flow.steps[this.flow.current_step];
       let nextStepIndex = this.flow.current_step + 1; // Default: next sequential step
       
+      console.log(`[DO:${this.state.id}] Current step index: ${this.flow.current_step}, steps length: ${this.flow.steps.length}`);
+      if (currentStep) {
+        console.log(`[DO:${this.state.id}] Current step ID: ${currentStep.step_id}, title: ${currentStep.title}`);
+      }
+      
       if (currentStep && this.env.FLOW_RUNS_DB) {
         try {
           const { getNextStepBasedOnConditions } = await import('../services/database');
@@ -301,7 +329,9 @@ export class ConversationOrchestratorDO_2026A {
           if (nextStep) {
             // Use the step's order_index (1-based in DB, convert to 0-based)
             nextStepIndex = nextStep.order_index - 1;
-            console.log(`[DO:${this.state.id}] Conditional branching selected step at index ${nextStepIndex}: ${nextStep.title}`);
+            console.log(`[DO:${this.state.id}] Conditional branching selected step at index ${nextStepIndex}: ${nextStep.title} (order_index: ${nextStep.order_index})`);
+          } else {
+            console.log(`[DO:${this.state.id}] No conditional branching, using sequential step ${nextStepIndex + 1}`);
           }
         } catch (error: any) {
           console.error(`[DO:${this.state.id}] Error in conditional branching: ${error.message}`);
@@ -311,6 +341,7 @@ export class ConversationOrchestratorDO_2026A {
       
       // Update current step index
       this.flow.current_step = nextStepIndex;
+      console.log(`[DO:${this.state.id}] Updated current_step to ${nextStepIndex}`);
       
       // Clear task data for next step
       this.flow.current_task_id = undefined;
@@ -318,15 +349,18 @@ export class ConversationOrchestratorDO_2026A {
       this.flow.current_task_description = undefined;
       
       // Check if done
+      console.log(`[DO:${this.state.id}] Checking if done: current_step=${this.flow.current_step}, steps.length=${this.flow.steps.length}`);
       if (this.flow.current_step >= this.flow.steps.length) {
         this.flow.state = 'DONE';
         console.log(`[DO:${this.state.id}] All ${this.flow.steps.length} steps completed`);
       } else {
         // Always send next step (simplified - remove task fetching logic for now)
         this.flow.state = 'SENDING_STEP';
-        
+        console.log(`[DO:${this.state.id}] Setting state to SENDING_STEP for step ${this.flow.current_step + 1}`);
+
         // Schedule alarm for next action
         await this.state.storage.setAlarm(Date.now() + 1000);
+        console.log(`[DO:${this.state.id}] Scheduled alarm for 1 second from now`);
       }
       
       await this.state.storage.put('flow', this.flow);
