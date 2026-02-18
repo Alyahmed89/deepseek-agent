@@ -15,6 +15,6 @@ tag = "v1"
 new_sqlite_classes = ["ConversationOrchestratorDO_2026A"]
 
 [[d1_databases]]
-binding = "PROJECT_FACTS_DB"
+binding = "FLOW_RUNS_DB"
 database_name = "flow-runs-db"
 database_id = "ce8f2a2c-6e4b-4398-b73e-ba8f204f609a"

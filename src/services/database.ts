@@ -190,7 +190,7 @@ export function generateFlowRunId(): string {
 
 /**
  * Get all project facts from the database
- * @param db D1Database instance (PROJECT_FACTS_DB)
+ * @param db D1Database instance (FLOW_RUNS_DB)
  * @returns Promise with array of project facts
  */
 export async function getProjectFacts(db: D1Database): Promise<ProjectFact[]> {

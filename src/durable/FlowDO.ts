@@ -110,13 +110,13 @@ export class ConversationOrchestratorDO_2026A {
   
   // Load steps from database
   private async loadFlowSteps(flowId: string): Promise<any[]> {
-    if (!this.env.PROJECT_FACTS_DB) {
+    if (!this.env.FLOW_RUNS_DB) {
       console.log(`[DO:${this.state.id}] No database available`);
       return [];
     }
     
     try {
-      const result = await this.env.PROJECT_FACTS_DB.prepare(
+      const result = await this.env.FLOW_RUNS_DB.prepare(
         'SELECT step_id, title, instructions, order_index FROM flow_steps WHERE flow_id = ? ORDER BY order_index'
       ).bind(flowId).all();
       
@@ -179,11 +179,11 @@ export class ConversationOrchestratorDO_2026A {
       const currentStep = this.flow.steps[this.flow.current_step];
       let nextStepIndex = this.flow.current_step + 1; // Default: next sequential step
       
-      if (currentStep && this.env.PROJECT_FACTS_DB) {
+      if (currentStep && this.env.FLOW_RUNS_DB) {
         try {
           const { getNextStepBasedOnConditions } = await import('../services/database');
           const nextStep = await getNextStepBasedOnConditions(
-            this.env.PROJECT_FACTS_DB,
+            this.env.FLOW_RUNS_DB,
             this.flow.flow_id,
             currentStep.step_id,
             responseText
@@ -254,11 +254,11 @@ export class ConversationOrchestratorDO_2026A {
         action: async () => {
           console.log(`[DO:${this.state.id}] Trigger detected: TASK COMPLETE`);
           // Make API call to update task status
-          if (this.flow?.current_task_id && this.env.PROJECT_FACTS_DB) {
+          if (this.flow?.current_task_id && this.env.FLOW_RUNS_DB) {
             try {
               const { updateTaskStatus } = await import('../services/database');
               await updateTaskStatus(
-                this.env.PROJECT_FACTS_DB,
+                this.env.FLOW_RUNS_DB,
                 this.flow.current_task_id,
                 'DONE'
               );
@@ -274,11 +274,11 @@ export class ConversationOrchestratorDO_2026A {
         action: async () => {
           console.log(`[DO:${this.state.id}] Trigger detected: TASK FAILED`);
           // Make API call to update task status
-          if (this.flow?.current_task_id && this.env.PROJECT_FACTS_DB) {
+          if (this.flow?.current_task_id && this.env.FLOW_RUNS_DB) {
             try {
               const { updateTaskStatus } = await import('../services/database');
               await updateTaskStatus(
-                this.env.PROJECT_FACTS_DB,
+                this.env.FLOW_RUNS_DB,
                 this.flow.current_task_id,
                 'FAILED'
               );
@@ -324,10 +324,10 @@ export class ConversationOrchestratorDO_2026A {
       // Process different trigger types
       switch (body.trigger_type) {
         case 'MANUAL_TASK_COMPLETE':
-          if (body.data?.task_id && this.env.PROJECT_FACTS_DB) {
+          if (body.data?.task_id && this.env.FLOW_RUNS_DB) {
             const { updateTaskStatus } = await import('../services/database');
             await updateTaskStatus(
-              this.env.PROJECT_FACTS_DB,
+              this.env.FLOW_RUNS_DB,
               body.data.task_id,
               'DONE'
             );
