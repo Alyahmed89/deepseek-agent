@@ -1,5 +1,6 @@
 // Ultra-minimal Flow Durable Object
 import { createOpenHandsConversation, injectMessageToOpenHands } from '../services/openhands';
+import { ALARM_DELAY_INIT, ALARM_DELAY_WAITING, ALARM_DELAY_ACTIVE, MIN_POLL_INTERVAL } from '../constants';
 
 interface FlowDOEnv {
   FLOW_RUNS_DB: D1Database;
@@ -45,16 +46,32 @@ export class ConversationOrchestratorDO_2026A {
   
   // Alarm handler
   async alarm(): Promise<void> {
-    if (!this.flow) return;
-    
-    console.log(`[DO:${this.state.id}] Alarm: state=${this.flow.state}, step=${this.flow.current_step + 1}/${this.flow.steps.length}`);
-    
-    if (this.flow.state === 'SENDING_STEP' || this.flow.state === 'FETCHING_TASK') {
-      // For FETCHING_TASK, just send the step (simplified)
-      await this.sendCurrentStep();
-    } else if (this.flow.state === 'WAITING_RESPONSE') {
-      // Poll OpenHands for responses
-      await this.pollOpenHandsForResponse();
+    try {
+      if (!this.flow) {
+        console.log(`[DO:${this.state.id}] Alarm fired but no flow state`);
+        return;
+      }
+      
+      console.log(`[DO:${this.state.id}] Alarm: state=${this.flow.state}, step=${this.flow.current_step + 1}/${this.flow.steps.length}`);
+      
+      if (this.flow.state === 'SENDING_STEP' || this.flow.state === 'FETCHING_TASK') {
+        // For FETCHING_TASK, just send the step (simplified)
+        await this.sendCurrentStep();
+      } else if (this.flow.state === 'WAITING_RESPONSE') {
+        // Poll OpenHands for responses
+        await this.pollOpenHandsForResponse();
+      } else {
+        console.log(`[DO:${this.state.id}] Alarm fired but flow in unexpected state: ${this.flow.state}`);
+      }
+    } catch (error: any) {
+      console.error(`[DO:${this.state.id}] Alarm handler error: ${error.message}`);
+      // Try to schedule another alarm to recover
+      try {
+        await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING);
+        console.log(`[DO:${this.state.id}] Scheduled recovery alarm after error`);
+      } catch (scheduleError: any) {
+        console.error(`[DO:${this.state.id}] Failed to schedule recovery alarm: ${scheduleError.message}`);
+      }
     }
   }
   
@@ -214,9 +231,9 @@ export class ConversationOrchestratorDO_2026A {
       
       await this.state.storage.put('flow', this.flow);
       
-      // Schedule alarm to start polling for responses IMMEDIATELY
-      await this.state.storage.setAlarm(Date.now() + 1); // Start polling in 1ms
-      console.log(`[DO:${this.state.id}] Scheduled alarm for 1ms from now to start polling`);
+      // Schedule alarm to start polling for responses
+      await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_INIT); // Use configured initial delay
+      console.log(`[DO:${this.state.id}] Scheduled alarm for ${ALARM_DELAY_INIT}ms from now to start polling`);
       
       // Save flow run to database
       if (this.env.FLOW_RUNS_DB) {
@@ -453,9 +470,9 @@ export class ConversationOrchestratorDO_2026A {
     this.flow.state = 'WAITING_RESPONSE';
     await this.state.storage.put('flow', this.flow);
     
-    // Schedule alarm to start polling for responses IMMEDIATELY
-    await this.state.storage.setAlarm(Date.now() + 1); // Start polling in 1ms
-    console.log(`[DO:${this.state.id}] Scheduled alarm for 1ms from now to start polling`);
+    // Schedule alarm to start polling for responses
+    await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING); // Use configured waiting delay
+    console.log(`[DO:${this.state.id}] Scheduled alarm for ${ALARM_DELAY_WAITING}ms from now to start polling`);
     
     console.log(`[DO:${this.state.id}] Waiting for OpenHands response...`);
   }
@@ -715,8 +732,8 @@ export class ConversationOrchestratorDO_2026A {
       
       if (!result.success) {
         console.error(`[DO:${this.state.id}] Failed to poll OpenHands: ${result.error}`);
-        // Schedule another check in 5 seconds (shorter backoff)
-        await this.state.storage.setAlarm(Date.now() + 5 * 1000);
+        // Schedule another check using configured waiting delay
+        await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING);
         return;
       }
       
@@ -817,15 +834,15 @@ export class ConversationOrchestratorDO_2026A {
         await this.state.storage.put('flow', this.flow);
         
       } else {
-        // No response yet, check again in 1ms (EXTREME aggressive polling)
-        console.log(`[DO:${this.state.id}] No new assistant response found. Checking again in 1ms.`);
-        await this.state.storage.setAlarm(Date.now() + 1);
+        // No response yet, check again using configured polling interval
+        console.log(`[DO:${this.state.id}] No new assistant response found. Checking again in ${MIN_POLL_INTERVAL}ms.`);
+        await this.state.storage.setAlarm(Date.now() + MIN_POLL_INTERVAL);
       }
       
     } catch (error: any) {
       console.error(`[DO:${this.state.id}] Error polling OpenHands: ${error.message}`);
-      // Schedule another check in 5 seconds on error (shorter backoff)
-      await this.state.storage.setAlarm(Date.now() + 5 * 1000);
+      // Schedule another check using configured waiting delay
+      await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING);
     }
   }
 }

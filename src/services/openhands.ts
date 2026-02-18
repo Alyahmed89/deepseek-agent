@@ -1,5 +1,5 @@
 // OpenHands API service - pure, stateless wrapper
-import { OPENHANDS_TIMEOUT, ENABLE_REQUEST_CACHING, CACHE_TTL } from '../constants';
+import { OPENHANDS_TIMEOUT, OPENHANDS_POLL_TIMEOUT, ENABLE_REQUEST_CACHING, CACHE_TTL } from '../constants';
 import { OpenHandsCreateResult, OpenHandsStatusResult, OpenHandsInjectResult } from '../types';
 
 // Simple in-memory cache for request optimization
@@ -198,7 +198,9 @@ export async function getOpenHandsConversation(
     while (retryCount <= maxRetries) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), OPENHANDS_TIMEOUT);
+        // Use shorter timeout for polling operations (bypassCache=true), longer for other operations
+        const timeout = bypassCache ? OPENHANDS_POLL_TIMEOUT : OPENHANDS_TIMEOUT;
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
 
         const headers: Record<string, string> = {
           'Content-Type': 'application/json'
