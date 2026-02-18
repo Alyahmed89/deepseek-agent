@@ -1,5 +1,6 @@
 // Minimal flow execution API
 import { Hono } from 'hono';
+import { ConversationOrchestratorDO_2026A } from './durable/FlowDO';
 
 interface CloudflareBindings {
   CONVERSATIONS: DurableObjectNamespace;
@@ -137,3 +138,4 @@ app.get('/', (c) => {
 });
 
 export default app;
+export { ConversationOrchestratorDO_2026A };

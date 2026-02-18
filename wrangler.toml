@@ -4,15 +4,15 @@ compatibility_date = "2025-02-13"
 
 [[durable_objects.bindings]]
 name = "CONVERSATIONS"
-class_name = "FlowDO"
+class_name = "ConversationOrchestratorDO_2026A"
 
 [[durable_objects.classes]]
-name = "FlowDO"
+name = "ConversationOrchestratorDO_2026A"
 script_name = "deepseek-agent"
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["FlowDO"]
+new_sqlite_classes = ["ConversationOrchestratorDO_2026A"]
 
 [[d1_databases]]
 binding = "PROJECT_FACTS_DB"

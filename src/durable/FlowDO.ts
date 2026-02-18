@@ -1,5 +1,5 @@
 // Ultra-minimal Flow Durable Object
-export class FlowDO {
+export class ConversationOrchestratorDO_2026A {
   state: DurableObjectState;
   env: any;
   
