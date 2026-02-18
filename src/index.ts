@@ -1,7 +1,7 @@
 // Hono HTTP API only - NO business logic, NO API calls
 import { Hono } from 'hono';
 import { CloudflareBindings } from './types';
-import { ConversationOrchestratorDO_2026A } from './durable/ConversationDO';
+import { ConversationOrchestratorDO_2026A } from './durable/FlowDO';
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 
