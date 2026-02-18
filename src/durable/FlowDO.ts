@@ -701,7 +701,8 @@ export class ConversationOrchestratorDO_2026A {
       current_task_id: this.flow.current_task_id,
       current_task_title: this.flow.current_task_title,
       last_step_response_length: this.flow.last_step_response?.length || 0,
-      created_at: this.flow.created_at
+      created_at: this.flow.created_at,
+      openhands_conversation_id: this.flow.openhands_conversation_id
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
