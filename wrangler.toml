@@ -1,38 +1,16 @@
 name = "deepseek-agent"
 main = "src/index.ts"
-compatibility_date = "2024-01-01"
-account_id = "e39371fc55a5c9ef7ed83e16660bd7bb"
+compatibility_date = "2025-02-13"
 
-[vars]
-DEEPSEEK_API_KEY = "sk-57370a37c79f4b7db9dbd1e253c25b8b"
-OPENHANDS_API_URL = "https://openhands.anyapp.cfd/api"
-
-# Use actual exported class name
 [[durable_objects.bindings]]
 name = "CONVERSATIONS"
-class_name = "ConversationOrchestratorDO_2026A"
+class_name = "FlowDO"
 
-# D1 database for flow runs tracking (etaflow tasks database)
-[[d1_databases]]
-binding = "FLOW_RUNS_DB"
-database_name = "flow-runs-db"
-database_id = "ce8f2a2c-6e4b-4398-b73e-ba8f204f609a"
-migrations_dir = "migrations"
+[[durable_objects.classes]]
+name = "FlowDO"
+script_name = "deepseek-agent"
 
-# D1 database for project facts (optional)
 [[d1_databases]]
 binding = "PROJECT_FACTS_DB"
-database_name = "project-facts-db"
-database_id = "35f4cc1c-5656-4c02-bda8-26b62b63e6ca"
-
-# KV namespace for rate limiting (optional - uncomment after creating namespace)
-# First create namespace with: npx wrangler kv namespace create "RATE_LIMIT_KV"
-# Then update the id below with the generated namespace ID
-# [[kv_namespaces]]
-# binding = "RATE_LIMIT_KV"
-# id = ""  # TODO: Create namespace and add ID here
-
-# Durable Object migration for new class (using new_sqlite_classes for free plan)
-[[migrations]]
-tag = "v1"
-new_sqlite_classes = ["ConversationOrchestratorDO_2026A"]
+database_name = "flow-runs-db"
+database_id = "ce8f2a2c-6e4b-4398-b73e-ba8f204f609a"

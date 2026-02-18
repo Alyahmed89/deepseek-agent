@@ -1,0 +1,386 @@
+// Ultra-minimal Flow Durable Object
+export class FlowDO {
+  state: DurableObjectState;
+  env: any;
+  
+  private flow: {
+    id: string;
+    flow_id: string;
+    current_step: number;
+    steps: Array<{
+      step_id: string;
+      title: string;
+      instructions: string;
+      order_index: number;
+    }>;
+    state: 'LOADING' | 'SENDING_STEP' | 'WAITING_RESPONSE' | 'DONE';
+    created_at: number;
+  } | null = null;
+  
+  constructor(state: DurableObjectState, env: any) {
+    this.state = state;
+    this.env = env;
+    
+    // Load from storage
+    state.blockConcurrencyWhile(async () => {
+      this.flow = await state.storage.get('flow');
+    });
+  }
+  
+  // Alarm handler
+  async alarm(): Promise<void> {
+    if (!this.flow) return;
+    
+    console.log(`[DO:${this.state.id}] Alarm: state=${this.flow.state}, step=${this.flow.current_step + 1}/${this.flow.steps.length}`);
+    
+    if (this.flow.state === 'SENDING_STEP') {
+      await this.sendCurrentStep();
+    }
+  }
+  
+  // HTTP endpoints
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const path = url.pathname;
+    
+    if (path === '/init' && request.method === 'POST') {
+      return this.handleInit(request);
+    }
+    
+    if (path === '/openhands-response' && request.method === 'POST') {
+      return this.handleOpenHandsResponse(request);
+    }
+    
+    if (path === '/status' && request.method === 'GET') {
+      return this.handleGetStatus();
+    }
+    
+    return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
+  }
+  
+  // Initialize flow
+  private async handleInit(request: Request): Promise<Response> {
+    try {
+      const body = await request.json() as { flow_id: string };
+      const { flow_id } = body;
+      
+      console.log(`[DO:${this.state.id}] Initializing flow: ${flow_id}`);
+      
+      // Load steps from database
+      const steps = await this.loadFlowSteps(flow_id);
+      
+      if (!steps || steps.length === 0) {
+        return new Response(JSON.stringify({ error: `No steps found for flow: ${flow_id}` }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Initialize flow
+      this.flow = {
+        id: this.state.id.toString(),
+        flow_id,
+        current_step: 0,
+        steps,
+        state: 'SENDING_STEP',
+        created_at: Date.now()
+      };
+      
+      await this.state.storage.put('flow', this.flow);
+      
+      // Schedule alarm to send first step
+      await this.state.storage.setAlarm(Date.now() + 1000);
+      
+      console.log(`[DO:${this.state.id}] Flow initialized with ${steps.length} steps`);
+      
+      return new Response(JSON.stringify({
+        success: true,
+        flow_id,
+        steps_count: steps.length,
+        message: 'Flow execution started'
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+    } catch (error: any) {
+      console.error(`[DO:${this.state.id}] Init error: ${error.message}`);
+      return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    }
+  }
+  
+  // Load steps from database
+  private async loadFlowSteps(flowId: string): Promise<any[]> {
+    if (!this.env.PROJECT_FACTS_DB) {
+      console.log(`[DO:${this.state.id}] No database available`);
+      return [];
+    }
+    
+    try {
+      const result = await this.env.PROJECT_FACTS_DB.prepare(
+        'SELECT step_id, title, instructions, order_index FROM flow_steps WHERE flow_id = ? ORDER BY order_index'
+      ).bind(flowId).all();
+      
+      return result.results || [];
+    } catch (error: any) {
+      console.error(`[DO:${this.state.id}] Error loading steps: ${error.message}`);
+      return [];
+    }
+  }
+  
+  // Send current step to OpenHands
+  private async sendCurrentStep(): Promise<void> {
+    if (!this.flow) return;
+    
+    const stepIndex = this.flow.current_step;
+    if (stepIndex >= this.flow.steps.length) {
+      this.flow.state = 'DONE';
+      await this.state.storage.put('flow', this.flow);
+      console.log(`[DO:${this.state.id}] All steps completed`);
+      return;
+    }
+    
+    const step = this.flow.steps[stepIndex];
+    console.log(`[DO:${this.state.id}] Sending step ${stepIndex + 1}: ${step.title}`);
+    
+    // This is where we would send to OpenHands
+    // For now, just log what would be sent
+    console.log(`[DO:${this.state.id}] Step instructions:`);
+    console.log(`Execute step: ${step.title}`);
+    console.log(step.instructions);
+    
+    // In real implementation, call OpenHands API here
+    // For now, simulate waiting for response
+    this.flow.state = 'WAITING_RESPONSE';
+    await this.state.storage.put('flow', this.flow);
+    
+    console.log(`[DO:${this.state.id}] Waiting for OpenHands response...`);
+  }
+  
+  // Handle OpenHands response with conditional branching
+  private async handleOpenHandsResponse(request: Request): Promise<Response> {
+    if (!this.flow) {
+      return new Response(JSON.stringify({ error: 'Flow not initialized' }), { status: 404 });
+    }
+    
+    try {
+      const body = await request.json() as { response: string };
+      const responseText = body.response;
+      
+      console.log(`[DO:${this.state.id}] Received OpenHands response for step ${this.flow.current_step + 1}`);
+      console.log(`[DO:${this.state.id}] Response (${responseText.length} chars): ${responseText.substring(0, 100)}...`);
+      
+      // Store response for conditional branching
+      this.flow.last_step_response = responseText;
+      
+      // Check for triggers in response
+      await this.checkForTriggers(responseText);
+      
+      // Get next step based on conditional branching
+      const currentStep = this.flow.steps[this.flow.current_step];
+      let nextStepIndex = this.flow.current_step + 1; // Default: next sequential step
+      
+      if (currentStep && this.env.PROJECT_FACTS_DB) {
+        try {
+          const { getNextStepBasedOnConditions } = await import('../services/database');
+          const nextStep = await getNextStepBasedOnConditions(
+            this.env.PROJECT_FACTS_DB,
+            this.flow.flow_id,
+            currentStep.step_id,
+            responseText
+          );
+          
+          if (nextStep) {
+            // Use the step's order_index (1-based in DB, convert to 0-based)
+            nextStepIndex = nextStep.order_index - 1;
+            console.log(`[DO:${this.state.id}] Conditional branching selected step at index ${nextStepIndex}: ${nextStep.title}`);
+          }
+        } catch (error: any) {
+          console.error(`[DO:${this.state.id}] Error in conditional branching: ${error.message}`);
+          // Continue with sequential step
+        }
+      }
+      
+      // Update current step index
+      this.flow.current_step = nextStepIndex;
+      
+      // Clear task data for next step
+      this.flow.current_task_id = undefined;
+      this.flow.current_task_title = undefined;
+      this.flow.current_task_description = undefined;
+      
+      // Check if done
+      if (this.flow.current_step >= this.flow.steps.length) {
+        this.flow.state = 'DONE';
+        console.log(`[DO:${this.state.id}] All ${this.flow.steps.length} steps completed`);
+      } else {
+        // Check if next step requires task fetching
+        const nextStep = this.flow.steps[this.flow.current_step];
+        if (nextStep && (nextStep.requires_task || nextStep.task_id)) {
+          this.flow.state = 'FETCHING_TASK';
+          console.log(`[DO:${this.state.id}] Next step requires task fetching`);
+        } else {
+          this.flow.state = 'SENDING_STEP';
+        }
+        
+        // Schedule alarm for next action
+        await this.state.storage.setAlarm(Date.now() + 1000);
+      }
+      
+      await this.state.storage.put('flow', this.flow);
+      
+      return new Response(JSON.stringify({
+        success: true,
+        step_completed: this.flow.current_step - 1,
+        total_steps: this.flow.steps.length,
+        next_step: this.flow.state === 'DONE' ? null : this.flow.steps[this.flow.current_step],
+        next_state: this.flow.state
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+    } catch (error: any) {
+      console.error(`[DO:${this.state.id}] Response error: ${error.message}`);
+      return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    }
+  }
+  
+  // Check for triggers in response text and make API calls
+  private async checkForTriggers(responseText: string): Promise<void> {
+    if (!this.flow) return;
+    
+    const triggers = [
+      { 
+        keyword: 'TASK COMPLETE', 
+        action: async () => {
+          console.log(`[DO:${this.state.id}] Trigger detected: TASK COMPLETE`);
+          // Make API call to update task status
+          if (this.flow?.current_task_id && this.env.PROJECT_FACTS_DB) {
+            try {
+              const { updateTaskStatus } = await import('../services/database');
+              await updateTaskStatus(
+                this.env.PROJECT_FACTS_DB,
+                this.flow.current_task_id,
+                'DONE'
+              );
+              console.log(`[DO:${this.state.id}] Updated task ${this.flow.current_task_id} to DONE`);
+            } catch (error: any) {
+              console.error(`[DO:${this.state.id}] Error updating task status: ${error.message}`);
+            }
+          }
+        }
+      },
+      { 
+        keyword: 'TASK FAILED', 
+        action: async () => {
+          console.log(`[DO:${this.state.id}] Trigger detected: TASK FAILED`);
+          // Make API call to update task status
+          if (this.flow?.current_task_id && this.env.PROJECT_FACTS_DB) {
+            try {
+              const { updateTaskStatus } = await import('../services/database');
+              await updateTaskStatus(
+                this.env.PROJECT_FACTS_DB,
+                this.flow.current_task_id,
+                'FAILED'
+              );
+              console.log(`[DO:${this.state.id}] Updated task ${this.flow.current_task_id} to FAILED`);
+            } catch (error: any) {
+              console.error(`[DO:${this.state.id}] Error updating task status: ${error.message}`);
+            }
+          }
+        }
+      },
+      { 
+        keyword: 'DEPLOYMENT COMPLETE', 
+        action: async () => {
+          console.log(`[DO:${this.state.id}] Trigger detected: DEPLOYMENT COMPLETE`);
+          // TODO: Make Cloudflare API call for deployment
+          // This would be a real API call to Cloudflare's API
+        }
+      }
+    ];
+    
+    const lowerResponse = responseText.toLowerCase();
+    
+    for (const trigger of triggers) {
+      if (lowerResponse.includes(trigger.keyword.toLowerCase())) {
+        console.log(`[DO:${this.state.id}] Executing trigger action for: ${trigger.keyword}`);
+        await trigger.action();
+      }
+    }
+  }
+  
+  // Handle external trigger API calls
+  private async handleTriggerApiCall(request: Request): Promise<Response> {
+    try {
+      const body = await request.json() as { 
+        trigger_type: string; 
+        data?: any;
+        flow_id?: string;
+        step_id?: string;
+      };
+      
+      console.log(`[DO:${this.state.id}] Received trigger API call: ${body.trigger_type}`);
+      
+      // Process different trigger types
+      switch (body.trigger_type) {
+        case 'MANUAL_TASK_COMPLETE':
+          if (body.data?.task_id && this.env.PROJECT_FACTS_DB) {
+            const { updateTaskStatus } = await import('../services/database');
+            await updateTaskStatus(
+              this.env.PROJECT_FACTS_DB,
+              body.data.task_id,
+              'DONE'
+            );
+            return new Response(JSON.stringify({
+              success: true,
+              message: `Task ${body.data.task_id} marked as DONE`
+            }), { headers: { 'Content-Type': 'application/json' } });
+          }
+          break;
+          
+        case 'UPDATE_FLOW_STATUS':
+          // Update flow status in database
+          return new Response(JSON.stringify({
+            success: true,
+            message: 'Flow status update received'
+          }), { headers: { 'Content-Type': 'application/json' } });
+          
+        default:
+          return new Response(JSON.stringify({
+            error: `Unknown trigger type: ${body.trigger_type}`
+          }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      }
+      
+      return new Response(JSON.stringify({
+        success: true,
+        message: 'Trigger processed'
+      }), { headers: { 'Content-Type': 'application/json' } });
+      
+    } catch (error: any) {
+      console.error(`[DO:${this.state.id}] Trigger API error: ${error.message}`);
+      return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    }
+  }
+  
+  // Get status
+  private async handleGetStatus(): Promise<Response> {
+    if (!this.flow) {
+      return new Response(JSON.stringify({ error: 'Flow not initialized' }), { status: 404 });
+    }
+    
+    return new Response(JSON.stringify({
+      id: this.flow.id,
+      flow_id: this.flow.flow_id,
+      state: this.flow.state,
+      current_step: this.flow.current_step,
+      total_steps: this.flow.steps.length,
+      current_step_info: this.flow.steps[this.flow.current_step] || null,
+      current_task_id: this.flow.current_task_id,
+      current_task_title: this.flow.current_task_title,
+      last_step_response_length: this.flow.last_step_response?.length || 0,
+      created_at: this.flow.created_at
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
