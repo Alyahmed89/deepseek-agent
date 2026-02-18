@@ -44,7 +44,7 @@ export const POLL_INTERVAL_RESET = 10000; // 10 seconds reset on activity (same 
 
 // Request optimization
 export const ENABLE_REQUEST_CACHING = true;
-export const CACHE_TTL = 1000; // 1 second cache TTL for flow execution (reduced from 60s)
+export const CACHE_TTL = 60000; // 60 seconds cache TTL (6x increase from 10s)
 export const MAX_CONCURRENT_CONVERSATIONS = 20; // Limit concurrent conversations (reduced from 50)
 
 // Durable Object lifecycle optimization

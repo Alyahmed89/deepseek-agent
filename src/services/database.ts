@@ -190,7 +190,7 @@ export function generateFlowRunId(): string {
 
 /**
  * Get all project facts from the database
- * @param db D1Database instance (FLOW_RUNS_DB)
+ * @param db D1Database instance (PROJECT_FACTS_DB)
  * @returns Promise with array of project facts
  */
 export async function getProjectFacts(db: D1Database): Promise<ProjectFact[]> {
@@ -287,7 +287,10 @@ export async function getFlowSteps(db: D1Database, flow_id: string): Promise<Ste
         fs.instructions as description,
         fs.step_type,
         fs.order_index,
-        fs.default_next_step,
+        fs.page_key,
+        fs.blocking,
+        fs.auto_fail_on_error,
+        fs.retryable,
         fs.task_id,
         fs.requires_task
       FROM flow_steps fs
@@ -326,7 +329,10 @@ export async function getStepWithTaskData(db: D1Database, step_id: string): Prom
         fs.instructions as description,
         fs.step_type,
         fs.order_index,
-        fs.default_next_step,
+        fs.page_key,
+        fs.blocking,
+        fs.auto_fail_on_error,
+        fs.retryable,
         fs.task_id,
         t.title as task_title,
         t.description as task_description
@@ -532,7 +538,10 @@ export async function getNextStepForFlow(db: D1Database, flow_id: string, flow_r
         fs.instructions as description,
         fs.step_type,
         fs.order_index,
-        fs.default_next_step
+        fs.page_key,
+        fs.blocking,
+        fs.auto_fail_on_error,
+        fs.retryable
       FROM flow_steps fs
       WHERE fs.flow_id = ? 
     `;
@@ -599,33 +608,7 @@ export async function getNextStepBasedOnConditions(
         
         switch (condition_type) {
           case 'response_contains':
-            // More flexible matching for status conditions
-            const responseLower = response_text.toLowerCase();
-            const conditionLower = condition_value.toLowerCase();
-            
-            // Special handling for status conditions
-            if (conditionLower.includes('status:') && (conditionLower.includes('success') || conditionLower.includes('failed'))) {
-              // Check for status with flexible formatting
-              // Remove all spaces and colons for comparison
-              const normalizedResponse = responseLower.replace(/\s+/g, '').replace(/:/g, '');
-              const normalizedCondition = conditionLower.replace(/\s+/g, '').replace(/:/g, '');
-              
-              // Check if response contains the normalized condition
-              conditionMet = normalizedResponse.includes(normalizedCondition);
-              
-              // Also check for common variations
-              if (!conditionMet) {
-                // Check for "status is success/failed"
-                if (conditionLower.includes('success') && (responseLower.includes('success') || responseLower.includes('successful'))) {
-                  conditionMet = true;
-                } else if (conditionLower.includes('failed') && responseLower.includes('failed')) {
-                  conditionMet = true;
-                }
-              }
-            } else {
-              // Default behavior for other conditions
-              conditionMet = responseLower.includes(conditionLower);
-            }
+            conditionMet = response_text.toLowerCase().includes(condition_value.toLowerCase());
             break;
           case 'response_matches':
             // Simple exact match (case-insensitive)
@@ -654,7 +637,10 @@ export async function getNextStepBasedOnConditions(
               fs.instructions as description,
               fs.step_type,
               fs.order_index,
-              fs.default_next_step
+              fs.page_key,
+              fs.blocking,
+              fs.auto_fail_on_error,
+              fs.retryable
             FROM flow_steps fs
             WHERE fs.flow_id = ? AND fs.order_index = ?
             LIMIT 1
@@ -685,6 +671,10 @@ export async function getNextStepBasedOnConditions(
         fs.instructions as description,
         fs.step_type,
         fs.order_index,
+        fs.page_key,
+        fs.blocking,
+        fs.auto_fail_on_error,
+        fs.retryable,
         fs.default_next_step
       FROM flow_steps fs
       WHERE fs.id = ?
@@ -705,7 +695,10 @@ export async function getNextStepBasedOnConditions(
           fs.instructions as description,
           fs.step_type,
           fs.order_index,
-          fs.default_next_step
+          fs.page_key,
+          fs.blocking,
+          fs.auto_fail_on_error,
+          fs.retryable
         FROM flow_steps fs
         WHERE fs.flow_id = ? AND fs.order_index = ?
         LIMIT 1
@@ -741,7 +734,10 @@ export async function getNextStepBasedOnConditions(
           fs.instructions as description,
           fs.step_type,
           fs.order_index,
-          fs.default_next_step
+          fs.page_key,
+          fs.blocking,
+          fs.auto_fail_on_error,
+          fs.retryable
         FROM flow_steps fs
         WHERE fs.flow_id = ? AND fs.order_index = ?
         LIMIT 1

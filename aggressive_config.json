@@ -1,0 +1,29 @@
+{
+  "aggressive_mode": true,
+  "static_prompts": [
+    "Please analyze the repository and provide a summary of the codebase structure.",
+    "Identify any critical issues or security vulnerabilities in the code.",
+    "Suggest improvements for code quality and performance.",
+    "Create a deployment plan for the application.",
+    "Generate documentation for the main components."
+  ],
+  "timeouts": {
+    "no_event_timeout": 300000, // 5 minutes instead of 1 minute
+    "openhands_timeout": 600000, // 10 minutes for long operations
+    "deepseek_timeout": 30000, // 30 seconds for DeepSeek
+    "retry_delay": 30000 // 30 seconds between retries
+  },
+  "conversation_management": {
+    "max_concurrent": 1,
+    "auto_restart": true,
+    "restart_delay": 10000, // 10 seconds between restarts
+    "max_restarts": 10
+  },
+  "static_mode": {
+    "enabled": true,
+    "use_static_prompts": true,
+    "rotate_prompts": true,
+    "force_end_flow": true,
+    "end_flow_message": "[END_FLOW] prompt: Please continue with the next task. deepseek_system: You are an AI assistant analyzing code repositories. branch: main"
+  }
+}
