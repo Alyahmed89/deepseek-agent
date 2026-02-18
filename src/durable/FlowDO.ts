@@ -58,8 +58,8 @@ export class ConversationOrchestratorDO_2026A {
         // For FETCHING_TASK, just send the step (simplified)
         await this.sendCurrentStep();
       } else if (this.flow.state === 'WAITING_RESPONSE') {
-        // Webhook-only mode: No polling, only webhook responses
-        // await this.pollOpenHandsForResponse();
+        // Enable automatic polling for responses
+        await this.pollOpenHandsForResponse();
       } else {
         console.log(`[DO:${this.state.id}] Alarm fired but flow in unexpected state: ${this.flow.state}`);
       }
@@ -684,10 +684,11 @@ export class ConversationOrchestratorDO_2026A {
       return new Response(JSON.stringify({ error: 'Flow not initialized' }), { status: 404 });
     }
     
-    // Webhook-only mode: No polling, only webhook responses
-    // if (this.flow.state === 'WAITING_RESPONSE') {
-    //   console.log(`[DO:${this.state.id}] Status check for WAITING_RESPONSE flow (polling disabled, webhook-only mode)`);
-    // }
+    // Enable automatic polling when checking status
+    if (this.flow.state === 'WAITING_RESPONSE') {
+      console.log(`[DO:${this.state.id}] Status check for WAITING_RESPONSE flow - polling for responses`);
+      await this.pollOpenHandsForResponse();
+    }
     
     return new Response(JSON.stringify({
       id: this.flow.id,

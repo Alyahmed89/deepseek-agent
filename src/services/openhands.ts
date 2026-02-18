@@ -267,10 +267,100 @@ export async function getOpenHandsConversation(
  * @param message Message to inject
  * @returns OpenHandsInjectResult with success or error
  */
+/**
+ * Poll OpenHands for new assistant responses and automatically call webhook
+ */
+export async function pollAndProcessOpenHandsResponse(
+  apiUrl: string,
+  conversationId: string,
+  webhookUrl: string,
+  lastEventId?: number
+): Promise<{ success: boolean; newEventId?: number; response?: string; error?: string }> {
+  try {
+    console.log(`[OPENHANDS_POLL] Polling conversation ${conversationId} for responses, lastEventId: ${lastEventId || 'none'}`);
+    
+    // Get events from OpenHands
+    const eventsResult = await getOpenHandsConversation(apiUrl, conversationId, true);
+    if (!eventsResult.success || !eventsResult.events) {
+      return { success: false, error: eventsResult.error || 'Failed to get events' };
+    }
+    
+    // Find new assistant responses (source: 'agent', action: 'message')
+    const events = eventsResult.events;
+    let latestEventId = lastEventId || -1;
+    let assistantResponse = null;
+    
+    for (const event of events) {
+      if (event.id > latestEventId) {
+        latestEventId = event.id;
+      }
+      
+      // Look for agent message responses that come after our last event
+      if (event.id > (lastEventId || -1) && event.source === 'agent' && event.action === 'message') {
+        console.log(`[OPENHANDS_POLL] Found new assistant response at event ${event.id}`);
+        assistantResponse = event.args?.content || event.message || event.content;
+        break;
+      }
+    }
+    
+    if (assistantResponse) {
+      console.log(`[OPENHANDS_POLL] Sending response to webhook: ${webhookUrl}`);
+      console.log(`[OPENHANDS_POLL] Response (${assistantResponse.length} chars): ${assistantResponse.substring(0, 100)}...`);
+      
+      // Call the webhook with the response
+      try {
+        const webhookResponse = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ response: assistantResponse })
+        });
+        
+        if (!webhookResponse.ok) {
+          const errorText = await webhookResponse.text();
+          console.error(`[OPENHANDS_POLL] Webhook call failed: ${webhookResponse.status} - ${errorText}`);
+          return { 
+            success: false, 
+            newEventId: latestEventId,
+            error: `Webhook failed: ${webhookResponse.status}` 
+          };
+        }
+        
+        console.log(`[OPENHANDS_POLL] Successfully sent response to webhook`);
+        return { 
+          success: true, 
+          newEventId: latestEventId,
+          response: assistantResponse 
+        };
+      } catch (webhookError: any) {
+        console.error(`[OPENHANDS_POLL] Webhook fetch error: ${webhookError.message}`);
+        return { 
+          success: false, 
+          newEventId: latestEventId,
+          error: `Webhook fetch error: ${webhookError.message}` 
+        };
+      }
+    } else {
+      console.log(`[OPENHANDS_POLL] No new assistant responses found. Latest event ID: ${latestEventId}`);
+      return { 
+        success: true, 
+        newEventId: latestEventId 
+      };
+    }
+    
+  } catch (error: any) {
+    console.error(`[OPENHANDS_POLL] Error: ${error.message}`);
+    return { 
+      success: false, 
+      error: error.message 
+    };
+  }
+}
+
 export async function injectMessageToOpenHands(
   apiUrl: string,
   conversationId: string,
-  message: string
+  message: string,
+  webhookUrl?: string
 ): Promise<OpenHandsInjectResult> {
   try {
     const injectUrl = apiUrl.endsWith('/') 
@@ -291,6 +381,19 @@ export async function injectMessageToOpenHands(
         };
         
         
+        // If webhookUrl is provided, include it in args so OpenHands can call back
+        const args: any = {
+          content: message,
+          wait_for_response: false,
+          file_urls: null,
+          image_urls: []
+        };
+        
+        if (webhookUrl) {
+          args.webhook_url = webhookUrl;
+          args.auto_respond = true;
+        }
+        
         const response = await fetch(injectUrl, {
           method: 'POST',
           headers,
@@ -298,12 +401,7 @@ export async function injectMessageToOpenHands(
             source: 'user',
             action: 'message',
             message: message,
-            args: {
-              content: message,
-              wait_for_response: false,
-              file_urls: null,
-              image_urls: []
-            }
+            args: args
           }),
           signal: controller.signal
         });
