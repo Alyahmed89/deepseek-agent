@@ -171,8 +171,9 @@ export async function getOpenHandsConversation(
 ): Promise<OpenHandsStatusResult> {
   try {
     // Check cache first (unless bypassCache is true)
+    const cacheKey = getCacheKey(apiUrl, conversationId);
+    
     if (!bypassCache) {
-      const cacheKey = getCacheKey(apiUrl, conversationId);
       const cachedData = getFromCache(cacheKey);
       
       if (cachedData) {
