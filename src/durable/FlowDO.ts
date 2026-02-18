@@ -476,6 +476,11 @@ export class ConversationOrchestratorDO_2026A {
       const body = await request.json() as { response: string };
       const responseText = body.response;
       
+      if (!responseText || typeof responseText !== 'string') {
+        console.error(`[DO:${this.state.id}] Invalid response format: ${JSON.stringify(body).substring(0, 200)}`);
+        return new Response(JSON.stringify({ error: 'Invalid response format' }), { status: 400 });
+      }
+      
       console.log(`[DO:${this.state.id}] Received OpenHands response for step ${this.flow.current_step + 1}`);
       console.log(`[DO:${this.state.id}] Response (${responseText.length} chars): ${responseText.substring(0, 100)}...`);
       

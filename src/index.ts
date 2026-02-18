@@ -258,16 +258,49 @@ app.get('/status/:id', async (c) => {
 app.post('/response/:id', async (c) => {
   try {
     const id = c.req.param('id');
-    const body = await c.req.json() as { response: string };
+    const body = await c.req.json() as any;
+    
+    // Extract response text from different possible formats
+    let responseText: string | undefined;
+    
+    // Format 1: { response: string } (expected format)
+    if (typeof body.response === 'string') {
+      responseText = body.response;
+    }
+    // Format 2: { events: Array, conversation_id: string } (from trigger_next_step.js)
+    else if (Array.isArray(body.events) && body.events.length > 0) {
+      // Find first agent event with content
+      const agentEvent = body.events.find((e: any) => 
+        e.source === 'agent' && (e.content || e.message || e.args?.content)
+      );
+      if (agentEvent) {
+        responseText = agentEvent.content || agentEvent.message || agentEvent.args?.content;
+      }
+    }
+    // Format 3: Direct event object
+    else if (body.source === 'agent' && (body.content || body.message || body.args?.content)) {
+      responseText = body.content || body.message || body.args?.content;
+    }
+    // Format 4: Nested in args
+    else if (body.args?.content) {
+      responseText = body.args.content;
+    }
+    
+    if (!responseText) {
+      console.error(`[HTTP:RESPONSE] Could not extract response text from body: ${JSON.stringify(body).substring(0, 200)}`);
+      return c.json({ error: 'No response text found in request body' }, 400);
+    }
+    
+    console.log(`[HTTP:RESPONSE] Extracted response (${responseText.length} chars): ${responseText.substring(0, 100)}...`);
     
     // Get the Durable Object
     const conversationDo = c.env.CONVERSATIONS.get(c.env.CONVERSATIONS.idFromString(id));
     
-    // Forward to Durable Object
+    // Forward to Durable Object with standardized format
     const response = await conversationDo.fetch('http://placeholder/openhands-response', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify({ response: responseText })
     });
     
     if (!response.ok) {
