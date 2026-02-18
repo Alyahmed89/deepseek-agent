@@ -18,12 +18,16 @@ export interface FlowState {
   current_step_data: Record<string, any> | null;
 }
 
+interface FlowControllerEnv {
+  OPENHANDS_API_URL: string;
+}
+
 export class FlowControllerDO {
   private state: DurableObjectState;
-  private env: Env;
+  private env: FlowControllerEnv;
   private flow: FlowState | null = null;
 
-  constructor(state: DurableObjectState, env: Env) {
+  constructor(state: DurableObjectState, env: FlowControllerEnv) {
     this.state = state;
     this.env = env;
     this.state.blockConcurrencyWhile(async () => {
