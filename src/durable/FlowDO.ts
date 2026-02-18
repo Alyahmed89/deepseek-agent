@@ -214,9 +214,9 @@ export class ConversationOrchestratorDO_2026A {
       
       await this.state.storage.put('flow', this.flow);
       
-      // Schedule alarm to start polling for responses
-      await this.state.storage.setAlarm(Date.now() + 5000); // Start polling in 5 seconds
-      console.log(`[DO:${this.state.id}] Scheduled alarm for 5 seconds from now to start polling`);
+      // Schedule alarm to start polling for responses IMMEDIATELY
+      await this.state.storage.setAlarm(Date.now() + 1000); // Start polling in 1 second
+      console.log(`[DO:${this.state.id}] Scheduled alarm for 1 second from now to start polling`);
       
       // Save flow run to database
       if (this.env.FLOW_RUNS_DB) {
@@ -453,9 +453,9 @@ export class ConversationOrchestratorDO_2026A {
     this.flow.state = 'WAITING_RESPONSE';
     await this.state.storage.put('flow', this.flow);
     
-    // Schedule alarm to start polling for responses
-    await this.state.storage.setAlarm(Date.now() + 5000); // Start polling in 5 seconds
-    console.log(`[DO:${this.state.id}] Scheduled alarm for 5 seconds from now to start polling`);
+    // Schedule alarm to start polling for responses IMMEDIATELY
+    await this.state.storage.setAlarm(Date.now() + 1000); // Start polling in 1 second
+    console.log(`[DO:${this.state.id}] Scheduled alarm for 1 second from now to start polling`);
     
     console.log(`[DO:${this.state.id}] Waiting for OpenHands response...`);
   }
@@ -529,13 +529,12 @@ export class ConversationOrchestratorDO_2026A {
         this.flow.state = 'DONE';
         console.log(`[DO:${this.state.id}] All ${this.flow.steps.length} steps completed`);
       } else {
-        // Always send next step (simplified - remove task fetching logic for now)
+        // Send next step IMMEDIATELY
         this.flow.state = 'SENDING_STEP';
         console.log(`[DO:${this.state.id}] Setting state to SENDING_STEP for step ${this.flow.current_step + 1}`);
 
-        // Schedule alarm for next action
-        await this.state.storage.setAlarm(Date.now() + 1000);
-        console.log(`[DO:${this.state.id}] Scheduled alarm for 1 second from now`);
+        // Send next step immediately instead of waiting for alarm
+        await this.sendCurrentStep();
       }
       
       await this.state.storage.put('flow', this.flow);
@@ -716,8 +715,8 @@ export class ConversationOrchestratorDO_2026A {
       
       if (!result.success) {
         console.error(`[DO:${this.state.id}] Failed to poll OpenHands: ${result.error}`);
-        // Schedule another check in 30 seconds
-        await this.state.storage.setAlarm(Date.now() + 30 * 1000);
+        // Schedule another check in 5 seconds (shorter backoff)
+        await this.state.storage.setAlarm(Date.now() + 5 * 1000);
         return;
       }
       
@@ -806,27 +805,26 @@ export class ConversationOrchestratorDO_2026A {
           this.flow.state = 'DONE';
           console.log(`[DO:${this.state.id}] All ${this.flow.steps.length} steps completed`);
         } else {
-          // Send next step
+          // Send next step IMMEDIATELY
           this.flow.state = 'SENDING_STEP';
           console.log(`[DO:${this.state.id}] Setting state to SENDING_STEP for step ${this.flow.current_step + 1}`);
           
-          // Schedule alarm for next action
-          await this.state.storage.setAlarm(Date.now() + 1000);
-          console.log(`[DO:${this.state.id}] Scheduled alarm for 1 second from now`);
+          // Send next step immediately instead of waiting for alarm
+          await this.sendCurrentStep();
         }
         
         await this.state.storage.put('flow', this.flow);
         
       } else {
-        // No response yet, check again in 10 seconds
-        console.log(`[DO:${this.state.id}] No new assistant response found. Checking again in 10 seconds.`);
-        await this.state.storage.setAlarm(Date.now() + 10 * 1000);
+        // No response yet, check again in 2 seconds (more aggressive polling)
+        console.log(`[DO:${this.state.id}] No new assistant response found. Checking again in 2 seconds.`);
+        await this.state.storage.setAlarm(Date.now() + 2 * 1000);
       }
       
     } catch (error: any) {
       console.error(`[DO:${this.state.id}] Error polling OpenHands: ${error.message}`);
-      // Schedule another check in 30 seconds on error
-      await this.state.storage.setAlarm(Date.now() + 30 * 1000);
+      // Schedule another check in 5 seconds on error (shorter backoff)
+      await this.state.storage.setAlarm(Date.now() + 5 * 1000);
     }
   }
 }
