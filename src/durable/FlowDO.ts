@@ -211,6 +211,53 @@ export class ConversationOrchestratorDO_2026A {
       
       await this.state.storage.put('flow', this.flow);
       
+      // Save flow run to database
+      if (this.env.FLOW_RUNS_DB) {
+        try {
+          const { saveFlowRun, generateFlowRunId } = await import('../services/database');
+          const flowRunId = generateFlowRunId();
+          const now = Date.now();
+          
+          const flowRunData = {
+            id: flowRunId,
+            conversation_id: this.state.id.toString(),
+            initial_prompt: initialMessage,
+            deepseek_system: undefined,
+            repository: flowDefinition.repository,
+            branch: flowDefinition.branch || 'main',
+            max_iterations: flowDefinition.max_iterations || 500,
+            actual_iterations: 0,
+            status: 'active' as const,
+            stop_reason: undefined,
+            prompts_and_responses: JSON.stringify([{
+              prompt: initialMessage,
+              response: null,
+              timestamp: now
+            }]),
+            created_at: now,
+            updated_at: now,
+            ended_at: undefined,
+            next_flow_id: undefined,
+            task_type: undefined,
+            success_score: undefined,
+            quality_metrics: undefined,
+            deployment_id: undefined,
+            improvement_suggestions: undefined
+          };
+          
+          const saveResult = await saveFlowRun(this.env.FLOW_RUNS_DB, flowRunData);
+          if (!saveResult.success) {
+            console.error(`[DO:${this.state.id}] Failed to save flow run to database: ${saveResult.error}`);
+          } else {
+            console.log(`[DO:${this.state.id}] Saved flow run to database with ID: ${flowRunId}`);
+          }
+        } catch (error: any) {
+          console.error(`[DO:${this.state.id}] Error saving flow run to database: ${error.message}`);
+        }
+      } else {
+        console.warn(`[DO:${this.state.id}] No FLOW_RUNS_DB available, skipping database save`);
+      }
+      
       // No need to schedule alarm - already waiting for response to step 1
       
       console.log(`[DO:${this.state.id}] Flow initialized with ${steps.length} steps, OpenHands conversation: ${openhandsResult.conversationId}`);
