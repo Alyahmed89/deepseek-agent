@@ -52,6 +52,9 @@ export class ConversationOrchestratorDO_2026A {
     if (this.flow.state === 'SENDING_STEP' || this.flow.state === 'FETCHING_TASK') {
       // For FETCHING_TASK, just send the step (simplified)
       await this.sendCurrentStep();
+    } else if (this.flow.state === 'WAITING_RESPONSE') {
+      // Poll OpenHands for responses
+      await this.pollOpenHandsForResponse();
     }
   }
   
@@ -210,6 +213,10 @@ export class ConversationOrchestratorDO_2026A {
       };
       
       await this.state.storage.put('flow', this.flow);
+      
+      // Schedule alarm to start polling for responses
+      await this.state.storage.setAlarm(Date.now() + 5000); // Start polling in 5 seconds
+      console.log(`[DO:${this.state.id}] Scheduled alarm for 5 seconds from now to start polling`);
       
       // Save flow run to database
       if (this.env.FLOW_RUNS_DB) {
@@ -445,6 +452,10 @@ export class ConversationOrchestratorDO_2026A {
     // Set state to waiting for response
     this.flow.state = 'WAITING_RESPONSE';
     await this.state.storage.put('flow', this.flow);
+    
+    // Schedule alarm to start polling for responses
+    await this.state.storage.setAlarm(Date.now() + 5000); // Start polling in 5 seconds
+    console.log(`[DO:${this.state.id}] Scheduled alarm for 5 seconds from now to start polling`);
     
     console.log(`[DO:${this.state.id}] Waiting for OpenHands response...`);
   }
@@ -683,5 +694,125 @@ export class ConversationOrchestratorDO_2026A {
     }), {
       headers: { 'Content-Type': 'application/json' }
     });
+  }
+  
+  // Poll OpenHands for responses when in WAITING_RESPONSE state
+  private async pollOpenHandsForResponse(): Promise<void> {
+    if (!this.flow || !this.flow.openhands_conversation_id) {
+      console.error(`[DO:${this.state.id}] Cannot poll: no flow or conversation ID`);
+      return;
+    }
+    
+    console.log(`[DO:${this.state.id}] Polling OpenHands for response to step ${this.flow.current_step + 1}`);
+    
+    try {
+      const { getOpenHandsConversation } = await import('../services/openhands');
+      const result = await getOpenHandsConversation(
+        this.env.OPENHANDS_API_URL,
+        this.flow.openhands_conversation_id
+      );
+      
+      if (!result.success) {
+        console.error(`[DO:${this.state.id}] Failed to poll OpenHands: ${result.error}`);
+        // Schedule another check in 30 seconds
+        await this.state.storage.setAlarm(Date.now() + 30 * 1000);
+        return;
+      }
+      
+      // Look for assistant responses in events
+      const events = result.events || [];
+      console.log(`[DO:${this.state.id}] Found ${events.length} events in OpenHands conversation`);
+      
+      // Find the most recent assistant response
+      // Events are returned newest first (reverse=true in getOpenHandsConversation)
+      let latestAssistantResponse: string | null = null;
+      let responseFound = false;
+      
+      for (const event of events) {
+        if (event.source === 'assistant' && event.action === 'message' && event.message) {
+          // Check if this is a new response (not the same as last one we processed)
+          if (event.message !== this.flow.last_step_response) {
+            latestAssistantResponse = event.message;
+            responseFound = true;
+            console.log(`[DO:${this.state.id}] Found new assistant response (${event.message.length} chars)`);
+            break;
+          }
+        }
+      }
+      
+      if (responseFound && latestAssistantResponse) {
+        // Process the response
+        console.log(`[DO:${this.state.id}] Processing OpenHands response for step ${this.flow.current_step + 1}`);
+        
+        // Store response
+        this.flow.last_step_response = latestAssistantResponse;
+        
+        // Check for triggers in response
+        await this.checkForTriggers(latestAssistantResponse);
+        
+        // Get next step based on conditional branching
+        const currentStep = this.flow.steps[this.flow.current_step];
+        let nextStepIndex = this.flow.current_step + 1; // Default: next sequential step
+        
+        if (currentStep && this.env.FLOW_RUNS_DB) {
+          try {
+            const { getNextStepBasedOnConditions } = await import('../services/database');
+            const nextStep = await getNextStepBasedOnConditions(
+              this.env.FLOW_RUNS_DB,
+              this.flow.flow_id,
+              currentStep.id, // Using id instead of step_id
+              latestAssistantResponse
+            );
+            
+            if (nextStep) {
+              // Use the step's order_index (1-based in DB, convert to 0-based)
+              nextStepIndex = nextStep.order_index - 1;
+              console.log(`[DO:${this.state.id}] Conditional branching selected step at index ${nextStepIndex}: ${nextStep.title} (order_index: ${nextStep.order_index})`);
+            } else {
+              console.log(`[DO:${this.state.id}] No conditional branching, using sequential step ${nextStepIndex + 1}`);
+            }
+          } catch (error: any) {
+            console.error(`[DO:${this.state.id}] Error in conditional branching: ${error.message}`);
+            // Continue with sequential step
+          }
+        }
+        
+        // Update current step index
+        this.flow.current_step = nextStepIndex;
+        console.log(`[DO:${this.state.id}] Updated current_step to ${nextStepIndex}`);
+        
+        // Clear task data for next step
+        this.flow.current_task_id = undefined;
+        this.flow.current_task_title = undefined;
+        this.flow.current_task_description = undefined;
+        
+        // Check if done
+        console.log(`[DO:${this.state.id}] Checking if done: current_step=${this.flow.current_step}, steps.length=${this.flow.steps.length}`);
+        if (this.flow.current_step >= this.flow.steps.length) {
+          this.flow.state = 'DONE';
+          console.log(`[DO:${this.state.id}] All ${this.flow.steps.length} steps completed`);
+        } else {
+          // Send next step
+          this.flow.state = 'SENDING_STEP';
+          console.log(`[DO:${this.state.id}] Setting state to SENDING_STEP for step ${this.flow.current_step + 1}`);
+          
+          // Schedule alarm for next action
+          await this.state.storage.setAlarm(Date.now() + 1000);
+          console.log(`[DO:${this.state.id}] Scheduled alarm for 1 second from now`);
+        }
+        
+        await this.state.storage.put('flow', this.flow);
+        
+      } else {
+        // No response yet, check again in 10 seconds
+        console.log(`[DO:${this.state.id}] No new assistant response found. Checking again in 10 seconds.`);
+        await this.state.storage.setAlarm(Date.now() + 10 * 1000);
+      }
+      
+    } catch (error: any) {
+      console.error(`[DO:${this.state.id}] Error polling OpenHands: ${error.message}`);
+      // Schedule another check in 30 seconds on error
+      await this.state.storage.setAlarm(Date.now() + 30 * 1000);
+    }
   }
 }
