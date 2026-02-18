@@ -287,10 +287,7 @@ export async function getFlowSteps(db: D1Database, flow_id: string): Promise<Ste
         fs.instructions as description,
         fs.step_type,
         fs.order_index,
-        fs.page_key,
-        fs.blocking,
-        fs.auto_fail_on_error,
-        fs.retryable,
+        fs.default_next_step,
         fs.task_id,
         fs.requires_task
       FROM flow_steps fs
@@ -329,10 +326,7 @@ export async function getStepWithTaskData(db: D1Database, step_id: string): Prom
         fs.instructions as description,
         fs.step_type,
         fs.order_index,
-        fs.page_key,
-        fs.blocking,
-        fs.auto_fail_on_error,
-        fs.retryable,
+        fs.default_next_step,
         fs.task_id,
         t.title as task_title,
         t.description as task_description
@@ -538,10 +532,7 @@ export async function getNextStepForFlow(db: D1Database, flow_id: string, flow_r
         fs.instructions as description,
         fs.step_type,
         fs.order_index,
-        fs.page_key,
-        fs.blocking,
-        fs.auto_fail_on_error,
-        fs.retryable
+        fs.default_next_step
       FROM flow_steps fs
       WHERE fs.flow_id = ? 
     `;
@@ -663,10 +654,7 @@ export async function getNextStepBasedOnConditions(
               fs.instructions as description,
               fs.step_type,
               fs.order_index,
-              fs.page_key,
-              fs.blocking,
-              fs.auto_fail_on_error,
-              fs.retryable
+              fs.default_next_step
             FROM flow_steps fs
             WHERE fs.flow_id = ? AND fs.order_index = ?
             LIMIT 1
@@ -697,10 +685,6 @@ export async function getNextStepBasedOnConditions(
         fs.instructions as description,
         fs.step_type,
         fs.order_index,
-        fs.page_key,
-        fs.blocking,
-        fs.auto_fail_on_error,
-        fs.retryable,
         fs.default_next_step
       FROM flow_steps fs
       WHERE fs.id = ?
@@ -721,10 +705,7 @@ export async function getNextStepBasedOnConditions(
           fs.instructions as description,
           fs.step_type,
           fs.order_index,
-          fs.page_key,
-          fs.blocking,
-          fs.auto_fail_on_error,
-          fs.retryable
+          fs.default_next_step
         FROM flow_steps fs
         WHERE fs.flow_id = ? AND fs.order_index = ?
         LIMIT 1
@@ -760,10 +741,7 @@ export async function getNextStepBasedOnConditions(
           fs.instructions as description,
           fs.step_type,
           fs.order_index,
-          fs.page_key,
-          fs.blocking,
-          fs.auto_fail_on_error,
-          fs.retryable
+          fs.default_next_step
         FROM flow_steps fs
         WHERE fs.flow_id = ? AND fs.order_index = ?
         LIMIT 1

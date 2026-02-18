@@ -257,10 +257,7 @@ export interface StepData {
   description: string | null;
   step_type: string;
   order_index: number;
-  page_key: string | null;
-  blocking: boolean;
-  auto_fail_on_error: boolean;
-  retryable: boolean;
+  default_next_step?: number;
   task_id?: string;
   requires_task?: boolean;
 }
