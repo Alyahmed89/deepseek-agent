@@ -433,8 +433,7 @@ export async function injectMessageToOpenHands(
         
         if (webhookUrl) {
           args.webhook_url = webhookUrl;
-          // Removed auto_respond: true to wait for actual agent response
-          // args.auto_respond = true;
+          args.auto_respond = true;
         }
         
         const response = await fetch(injectUrl, {
