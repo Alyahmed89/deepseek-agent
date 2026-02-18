@@ -153,168 +153,39 @@ app.get('/health', async (c) => {
 app.post('/start', async (c) => {
   try {
     const body = await c.req.json() as {
-      repository?: string;
-      branch?: string;
-      initial_user_prompt?: string;
-      max_iterations?: number;
-      deepseek_system?: string;
-      flow?: string; // New: flow ID for flow-based execution
+      flow?: string; // flow ID for flow-based execution
       flow_id?: string; // Alternative name for flow
     };
     
-    const { repository, branch, initial_user_prompt, max_iterations, deepseek_system, flow, flow_id } = body;
+    const { flow, flow_id } = body;
     
     // Check if this is a flow-based execution
     const targetFlowId = flow || flow_id;
     
-    if (targetFlowId) {
-      // FLOW-BASED EXECUTION
-      console.log(`[HTTP:START:FLOW] Starting flow execution: ${targetFlowId}`);
-      
-      // Create a new Durable Object for this flow execution
-      const id = c.env.CONVERSATIONS.newUniqueId();
-      const conversationDo = c.env.CONVERSATIONS.get(id);
-      
-      // Initialize the Durable Object for flow execution - NO AWAIT to external APIs
-      const initResponse = await conversationDo.fetch('http://placeholder/initialize-flow', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          flow_id: targetFlowId,
-          repository: repository, // Don't provide default - let flow definition determine it
-          branch: branch, // Don't provide default - let flow definition determine it
-          initial_user_prompt: initial_user_prompt || `Execute flow: ${targetFlowId}`,
-          max_iterations: max_iterations || 20,
-          deepseek_system: deepseek_system // Don't provide default - let flow definition determine it
-        })
-      });
-      
-      if (!initResponse.ok) {
-        const errorText = await initResponse.text();
-        console.error(`[HTTP:START:FLOW] Durable Object init failed: ${initResponse.status} - ${errorText}`);
-        return c.json({ error: `Failed to start flow execution: ${initResponse.status}` }, 500);
-      }
-      
-      // Track active conversation count
-      try {
-        if (c.env.RATE_LIMIT_KV) {
-          const activeConversationsKey = 'global:active_conversations';
-          const currentCount = await c.env.RATE_LIMIT_KV.get(activeConversationsKey);
-          const newCount = parseInt(currentCount || '0') + 1;
-          await c.env.RATE_LIMIT_KV.put(activeConversationsKey, newCount.toString(), { expirationTtl: 3600 }); // 1 hour TTL
-          console.log(`[RATE_LIMIT] Active conversations: ${newCount}`);
-        }
-      } catch (error) {
-        console.error(`[RATE_LIMIT] Error tracking active conversation: ${error}`);
-      }
-      
-      // Return IMMEDIATELY - work happens in alarms
-      return c.json({
-        success: true,
-        message: 'Flow execution started. Work will happen in background via alarms.',
-        conversation_id: id.toString(),
-        flow_id: targetFlowId,
-        note: 'Flow execution: DeepSeek → OpenHands → API validation → Next step',
-        check_status_url: `${new URL(c.req.url).origin}/status/${id.toString()}`
-      });
-      
-    } else {
-      // ORIGINAL REPOSITORY-BASED CONVERSATION
-      // Validate required fields
-      if (!repository || !initial_user_prompt) {
-        return c.json({ error: 'Need repository and initial_user_prompt (branch is optional), or provide flow ID' }, 400);
-      }
-
-      console.log(`[HTTP:START] Creating conversation for repository: ${repository}`);
-      
-      // Create a new Durable Object for this conversation
-      const id = c.env.CONVERSATIONS.newUniqueId();
-      const conversationDo = c.env.CONVERSATIONS.get(id);
-      
-      // Initialize the Durable Object - NO AWAIT to external APIs
-      const initResponse = await conversationDo.fetch('http://placeholder/initialize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          repository, 
-          branch: branch || 'main', 
-          initial_user_prompt,
-          max_iterations: max_iterations || 20,
-          deepseek_system
-        })
-      });
-      
-      if (!initResponse.ok) {
-        const errorText = await initResponse.text();
-        console.error(`[HTTP:START] Durable Object init failed: ${initResponse.status} - ${errorText}`);
-        return c.json({ error: `Failed to start conversation: ${initResponse.status}` }, 500);
-      }
-      
-      // Track active conversation count
-      try {
-        if (c.env.RATE_LIMIT_KV) {
-          const activeConversationsKey = 'global:active_conversations';
-          const currentCount = await c.env.RATE_LIMIT_KV.get(activeConversationsKey);
-          const newCount = parseInt(currentCount || '0') + 1;
-          await c.env.RATE_LIMIT_KV.put(activeConversationsKey, newCount.toString(), { expirationTtl: 3600 }); // 1 hour TTL
-          console.log(`[RATE_LIMIT] Active conversations: ${newCount}`);
-        }
-      } catch (error) {
-        console.error(`[RATE_LIMIT] Error tracking active conversation: ${error}`);
-      }
-      
-      // Return IMMEDIATELY - work happens in alarms
-      return c.json({
-        success: true,
-        message: 'Conversation started. Work will happen in background via alarms.',
-        conversation_id: id.toString(),
-        note: 'DeepSeek will process first, then OpenHands, then back to DeepSeek, etc.',
-        check_status_url: `${new URL(c.req.url).origin}/status/${id.toString()}`
-      });
+    if (!targetFlowId) {
+      return c.json({ error: 'Need flow or flow_id parameter' }, 400);
     }
     
-  } catch (error: any) {
-    console.error(`[HTTP:START] Endpoint error: ${error.message}`);
-    return c.json({ error: error.message }, 500);
-  }
-});
-
-// Attach to existing OpenHands conversation
-app.post('/attach', async (c) => {
-  try {
-    const body = await c.req.json() as {
-      openhands_conversation_id: string;
-      deepseek_system?: string;
-      max_iterations?: number;
-    };
-    const { openhands_conversation_id, deepseek_system, max_iterations } = body;
+    // FLOW-BASED EXECUTION
+    console.log(`[HTTP:START] Starting flow execution: ${targetFlowId}`);
     
-    // Validate required field
-    if (!openhands_conversation_id) {
-      return c.json({ error: 'Need openhands_conversation_id' }, 400);
-    }
-
-    console.log(`[HTTP:ATTACH] Attaching to existing OpenHands conversation: ${openhands_conversation_id}`);
-    
-    // Create a new Durable Object for this attachment
+    // Create a new Durable Object for this flow execution
     const id = c.env.CONVERSATIONS.newUniqueId();
     const conversationDo = c.env.CONVERSATIONS.get(id);
     
-    // Initialize with existing OpenHands conversation ID
-    const initResponse = await conversationDo.fetch('http://placeholder/attach', {
+    // Initialize the Durable Object for flow execution - NO AWAIT to external APIs
+    const initResponse = await conversationDo.fetch('http://placeholder/init', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
-        openhands_conversation_id,
-        max_iterations: max_iterations || 20,
-        deepseek_system
+        flow_id: targetFlowId
       })
     });
     
     if (!initResponse.ok) {
       const errorText = await initResponse.text();
-      console.error(`[HTTP:ATTACH] Durable Object attach failed: ${initResponse.status} - ${errorText}`);
-      return c.json({ error: `Failed to attach to conversation: ${initResponse.status}` }, 500);
+      console.error(`[HTTP:START] Durable Object init failed: ${initResponse.status} - ${errorText}`);
+      return c.json({ error: `Failed to start flow execution: ${initResponse.status}` }, 500);
     }
     
     // Track active conversation count
@@ -330,63 +201,25 @@ app.post('/attach', async (c) => {
       console.error(`[RATE_LIMIT] Error tracking active conversation: ${error}`);
     }
     
-    // Return immediately - monitoring happens in alarms
+    // Return IMMEDIATELY - work happens in alarms
     return c.json({
       success: true,
-      message: 'Attached to existing OpenHands conversation. DeepSeek will monitor and respond.',
+      message: 'Flow execution started. Work will happen in background via alarms.',
       conversation_id: id.toString(),
-      openhands_conversation_id: openhands_conversation_id,
+      flow_id: targetFlowId,
+      note: 'Flow execution: DeepSeek → OpenHands → API validation → Next step',
       check_status_url: `${new URL(c.req.url).origin}/status/${id.toString()}`
     });
     
   } catch (error: any) {
-    console.error(`[HTTP:ATTACH] Endpoint error: ${error.message}`);
+    console.error(`[HTTP:START] Endpoint error: ${error.message}`);
     return c.json({ error: error.message }, 500);
   }
 });
 
-// Ultra-minimal flow execution endpoint
-app.post('/start-flow', async (c) => {
-  try {
-    const body = await c.req.json() as { flow?: string; flow_id?: string };
-    const flowId = body.flow || body.flow_id;
-    
-    if (!flowId) {
-      return c.json({ error: 'Need flow or flow_id parameter' }, 400);
-    }
-    
-    console.log(`[HTTP:START-FLOW] Starting ultra-minimal flow: ${flowId}`);
-    
-    // Create Durable Object
-    const id = c.env.CONVERSATIONS.newUniqueId();
-    const doObj = c.env.CONVERSATIONS.get(id);
-    
-    // Initialize flow
-    const response = await doObj.fetch('http://placeholder/start-flow', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ flow_id: flowId })
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[HTTP:START-FLOW] Durable Object init failed: ${response.status} - ${errorText}`);
-      return c.json({ error: `Failed to start flow: ${response.status}` }, 500);
-    }
-    
-    return c.json({
-      success: true,
-      flow_id: flowId,
-      conversation_id: id.toString(),
-      message: 'Ultra-minimal flow execution started',
-      check_status_url: `${new URL(c.req.url).origin}/status/${id.toString()}`
-    });
-    
-  } catch (error: any) {
-    console.error(`[HTTP:START-FLOW] Error: ${error.message}`);
-    return c.json({ error: error.message }, 500);
-  }
-});
+
+
+
 
 // Check conversation status
 app.get('/status/:id', async (c) => {
@@ -397,7 +230,7 @@ app.get('/status/:id', async (c) => {
     const conversationDo = c.env.CONVERSATIONS.get(c.env.CONVERSATIONS.idFromString(id));
     
     // Get conversation state
-    const stateResponse = await conversationDo.fetch('http://placeholder/get-state', {
+    const stateResponse = await conversationDo.fetch('http://placeholder/status', {
       method: 'GET'
     });
     
@@ -418,66 +251,7 @@ app.get('/status/:id', async (c) => {
   }
 });
 
-// Force stop a conversation
-app.post('/stop/:id', async (c) => {
-  try {
-    const id = c.req.param('id');
-    
-    // Get the Durable Object
-    const conversationDo = c.env.CONVERSATIONS.get(c.env.CONVERSATIONS.idFromString(id));
-    
-    // Stop the conversation
-    const stopResponse = await conversationDo.fetch('http://placeholder/stop', {
-      method: 'POST'
-    });
-    
-    if (!stopResponse.ok) {
-      return c.json({ error: 'Failed to stop conversation' }, 500);
-    }
-    
-    const stopData = await stopResponse.json() as any;
-    
-    return c.json({
-      success: true,
-      message: stopData.message
-    });
-    
-  } catch (error: any) {
-    console.error(`[HTTP:STOP] Endpoint error: ${error.message}`);
-    return c.json({ error: error.message }, 500);
-  }
-});
 
-// Delete a specific Durable Object
-app.post('/delete/:id', async (c) => {
-  try {
-    const id = c.req.param('id');
-    
-    // Get the Durable Object
-    const conversationDo = c.env.CONVERSATIONS.get(c.env.CONVERSATIONS.idFromString(id));
-    
-    // Delete the Durable Object
-    const deleteResponse = await conversationDo.fetch('http://placeholder/delete', {
-      method: 'POST'
-    });
-    
-    if (!deleteResponse.ok) {
-      return c.json({ error: 'Failed to delete Durable Object' }, 500);
-    }
-    
-    const deleteData = await deleteResponse.json() as any;
-    
-    return c.json({
-      success: true,
-      message: deleteData.message,
-      id: deleteData.id
-    });
-    
-  } catch (error: any) {
-    console.error(`[HTTP:DELETE] Endpoint error: ${error.message}`);
-    return c.json({ error: error.message }, 500);
-  }
-});
 
 // OpenHands response webhook for flow execution
 app.post('/response/:id', async (c) => {
@@ -509,40 +283,7 @@ app.post('/response/:id', async (c) => {
   }
 });
 
-// API namespace: Stop conversation
-app.post('/api/conversations/:conversation_id/stop', async (c) => {
-  try {
-    const conversationId = c.req.param('conversation_id');
-    
-    // Get the Durable Object
-    const conversationDo = c.env.CONVERSATIONS.get(c.env.CONVERSATIONS.idFromString(conversationId));
-    
-    // Stop the conversation
-    const stopResponse = await conversationDo.fetch('http://placeholder/stop', {
-      method: 'POST'
-    });
-    
-    if (!stopResponse.ok) {
-      return c.json({ error: 'Failed to stop conversation' }, 500);
-    }
-    
-    const stopData = await stopResponse.json() as any;
-    
-    return c.json({
-      success: true,
-      message: stopData.message,
-      conversation_id: conversationId,
-      stopped_at: new Date().toISOString()
-    });
-    
-  } catch (error: any) {
-    console.error(`[HTTP:API_STOP] Endpoint error: ${error.message}`);
-    return c.json({ 
-      error: error.message,
-      conversation_id: c.req.param('conversation_id')
-    }, 500);
-  }
-});
+
 
 // Task completion API - SINGLE SOURCE OF TRUTH for task completion
 app.post('/tasks/:id/complete', async (c) => {
