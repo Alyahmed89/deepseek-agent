@@ -1,7 +1,14 @@
 // Ultra-minimal Flow Durable Object
+import { createOpenHandsConversation, injectMessageToOpenHands } from '../services/openhands';
+
+interface FlowDOEnv {
+  FLOW_RUNS_DB: D1Database;
+  OPENHANDS_API_URL: string;
+}
+
 export class ConversationOrchestratorDO_2026A {
   state: DurableObjectState;
-  env: any;
+  env: FlowDOEnv;
   
   private flow: {
     id: string;
@@ -15,6 +22,9 @@ export class ConversationOrchestratorDO_2026A {
     }>;
     state: 'LOADING' | 'SENDING_STEP' | 'WAITING_RESPONSE' | 'DONE';
     created_at: number;
+    openhands_conversation_id?: string;
+    repository?: string;
+    branch?: string;
   } | null = null;
   
   constructor(state: DurableObjectState, env: any) {
@@ -66,12 +76,39 @@ export class ConversationOrchestratorDO_2026A {
       
       console.log(`[DO:${this.state.id}] Initializing flow: ${flow_id}`);
       
+      // Load flow definition
+      const flowDefinition = await this.loadFlowDefinition(flow_id);
+      if (!flowDefinition) {
+        return new Response(JSON.stringify({ error: `Flow definition not found: ${flow_id}` }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
       // Load steps from database
       const steps = await this.loadFlowSteps(flow_id);
       
       if (!steps || steps.length === 0) {
         return new Response(JSON.stringify({ error: `No steps found for flow: ${flow_id}` }), {
           status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Create OpenHands conversation
+      console.log(`[DO:${this.state.id}] Creating OpenHands conversation for repository: ${flowDefinition.repository}, branch: ${flowDefinition.branch || 'main'}`);
+      
+      const openhandsResult = await createOpenHandsConversation(
+        this.env.OPENHANDS_API_URL,
+        `Starting flow: ${flowDefinition.name}`,
+        flowDefinition.repository,
+        flowDefinition.branch || 'main'
+      );
+      
+      if (!openhandsResult.success) {
+        console.error(`[DO:${this.state.id}] Failed to create OpenHands conversation: ${openhandsResult.error}`);
+        return new Response(JSON.stringify({ error: `Failed to create OpenHands conversation: ${openhandsResult.error}` }), {
+          status: 500,
           headers: { 'Content-Type': 'application/json' }
         });
       }
@@ -83,7 +120,10 @@ export class ConversationOrchestratorDO_2026A {
         current_step: 0,
         steps,
         state: 'SENDING_STEP',
-        created_at: Date.now()
+        created_at: Date.now(),
+        openhands_conversation_id: openhandsResult.conversationId,
+        repository: flowDefinition.repository,
+        branch: flowDefinition.branch || 'main'
       };
       
       await this.state.storage.put('flow', this.flow);
@@ -91,13 +131,19 @@ export class ConversationOrchestratorDO_2026A {
       // Schedule alarm to send first step
       await this.state.storage.setAlarm(Date.now() + 1000);
       
-      console.log(`[DO:${this.state.id}] Flow initialized with ${steps.length} steps`);
+      console.log(`[DO:${this.state.id}] Flow initialized with ${steps.length} steps, OpenHands conversation: ${openhandsResult.conversationId}`);
       
       return new Response(JSON.stringify({
         success: true,
         flow_id,
+        conversation_id: openhandsResult.conversationId,
         steps_count: steps.length,
-        message: 'Flow execution started'
+        message: 'Flow execution started',
+        endpoints: {
+          status: `/status/${this.state.id.toString()}`,
+          response: `/response/${this.state.id.toString()}`,
+          trigger: `/trigger-api-call/${this.state.id.toString()}`
+        }
       }), {
         headers: { 'Content-Type': 'application/json' }
       });
@@ -108,6 +154,25 @@ export class ConversationOrchestratorDO_2026A {
     }
   }
   
+  // Load flow definition from database
+  private async loadFlowDefinition(flowId: string): Promise<any> {
+    if (!this.env.FLOW_RUNS_DB) {
+      console.log(`[DO:${this.state.id}] No database available`);
+      return null;
+    }
+    
+    try {
+      const result = await this.env.FLOW_RUNS_DB.prepare(
+        'SELECT name, repository, branch, max_iterations FROM flow_definitions WHERE id = ?'
+      ).bind(flowId).first();
+      
+      return result;
+    } catch (error: any) {
+      console.error(`[DO:${this.state.id}] Error loading flow definition: ${error.message}`);
+      return null;
+    }
+  }
+
   // Load steps from database
   private async loadFlowSteps(flowId: string): Promise<any[]> {
     if (!this.env.FLOW_RUNS_DB) {
@@ -142,14 +207,27 @@ export class ConversationOrchestratorDO_2026A {
     const step = this.flow.steps[stepIndex];
     console.log(`[DO:${this.state.id}] Sending step ${stepIndex + 1}: ${step.title}`);
     
-    // This is where we would send to OpenHands
-    // For now, just log what would be sent
-    console.log(`[DO:${this.state.id}] Step instructions:`);
-    console.log(`Execute step: ${step.title}`);
-    console.log(step.instructions);
+    // Send step to OpenHands
+    if (this.flow.openhands_conversation_id) {
+      const message = `Execute step ${stepIndex + 1}: ${step.title}\n\n${step.instructions}`;
+      
+      const injectResult = await injectMessageToOpenHands(
+        this.env.OPENHANDS_API_URL,
+        this.flow.openhands_conversation_id,
+        message
+      );
+      
+      if (!injectResult.success) {
+        console.error(`[DO:${this.state.id}] Failed to send step to OpenHands: ${injectResult.error}`);
+        // Still set state to waiting for response, but log error
+      }
+      
+      console.log(`[DO:${this.state.id}] Step sent to OpenHands conversation: ${this.flow.openhands_conversation_id}`);
+    } else {
+      console.error(`[DO:${this.state.id}] No OpenHands conversation ID available`);
+    }
     
-    // In real implementation, call OpenHands API here
-    // For now, simulate waiting for response
+    // Set state to waiting for response
     this.flow.state = 'WAITING_RESPONSE';
     await this.state.storage.put('flow', this.flow);
     

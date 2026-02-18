@@ -5,6 +5,7 @@ import { ConversationOrchestratorDO_2026A } from './durable/FlowDO';
 interface CloudflareBindings {
   CONVERSATIONS: DurableObjectNamespace;
   FLOW_RUNS_DB: D1Database;
+  OPENHANDS_API_URL: string;
 }
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();

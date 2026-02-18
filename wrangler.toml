@@ -2,6 +2,9 @@ name = "deepseek-agent"
 main = "src/index.ts"
 compatibility_date = "2025-02-13"
 
+[vars]
+OPENHANDS_API_URL = "http://localhost:44808"
+
 [[durable_objects.bindings]]
 name = "CONVERSATIONS"
 class_name = "ConversationOrchestratorDO_2026A"
