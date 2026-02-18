@@ -43,7 +43,8 @@ export class ConversationOrchestratorDO_2026A {
     
     console.log(`[DO:${this.state.id}] Alarm: state=${this.flow.state}, step=${this.flow.current_step + 1}/${this.flow.steps.length}`);
     
-    if (this.flow.state === 'SENDING_STEP') {
+    if (this.flow.state === 'SENDING_STEP' || this.flow.state === 'FETCHING_TASK') {
+      // For FETCHING_TASK, just send the step (simplified)
       await this.sendCurrentStep();
     }
   }
@@ -63,6 +64,10 @@ export class ConversationOrchestratorDO_2026A {
     
     if (path === '/status' && request.method === 'GET') {
       return this.handleGetStatus();
+    }
+    
+    if (path === '/trigger-api-call' && request.method === 'POST') {
+      return this.handleTriggerApiCall(request);
     }
     
     return new Response(JSON.stringify({ error: 'Not found' }), { status: 404 });
@@ -100,7 +105,13 @@ export class ConversationOrchestratorDO_2026A {
       
       // Get first step to use as initial message
       const firstStep = steps[0];
-      const initialMessage = `Execute step 1: ${firstStep.title}\n\n${firstStep.instructions}`;
+      if (!firstStep) {
+        console.error(`[DO:${this.state.id}] No steps found for flow ${flowId}`);
+        return new Response(JSON.stringify({ error: 'No steps found for flow' }), { status: 400 });
+      }
+      const firstStepTitle = firstStep.title || 'Step 1';
+      const instructions = firstStep.instructions || 'No instructions provided';
+      const initialMessage = `Execute step 1: ${firstStepTitle}\n\n${instructions}`;
       
       const openhandsResult = await createOpenHandsConversation(
         this.env.OPENHANDS_API_URL,
@@ -184,11 +195,26 @@ export class ConversationOrchestratorDO_2026A {
     }
     
     try {
+      // Try with new column names first (title, instructions, order_index)
       const result = await this.env.FLOW_RUNS_DB.prepare(
         'SELECT id as step_id, title, instructions, order_index FROM flow_steps WHERE flow_id = ? ORDER BY order_index'
       ).bind(flowId).all();
       
-      return result.results || [];
+      if (result.results && result.results.length > 0) {
+        return result.results;
+      }
+      
+      // If no results, try with old column names (prompt, step_number)
+      const oldResult = await this.env.FLOW_RUNS_DB.prepare(
+        'SELECT id as step_id, prompt as instructions, step_number as order_index FROM flow_steps WHERE flow_id = ? ORDER BY step_number'
+      ).bind(flowId).all();
+      
+      // Add empty title for old schema
+      const steps = oldResult.results || [];
+      return steps.map(step => ({
+        ...step,
+        title: step.title || `Step ${step.order_index}`
+      }));
     } catch (error: any) {
       console.error(`[DO:${this.state.id}] Error loading steps: ${error.message}`);
       return [];
@@ -208,11 +234,13 @@ export class ConversationOrchestratorDO_2026A {
     }
     
     const step = this.flow.steps[stepIndex];
-    console.log(`[DO:${this.state.id}] Sending step ${stepIndex + 1}: ${step.title}`);
+    const stepTitle = step.title || `Step ${stepIndex + 1}`;
+    console.log(`[DO:${this.state.id}] Sending step ${stepIndex + 1}: ${stepTitle}`);
     
     // Send step to OpenHands
     if (this.flow.openhands_conversation_id) {
-      const message = `Execute step ${stepIndex + 1}: ${step.title}\n\n${step.instructions}`;
+      const instructions = step.instructions || 'No instructions provided';
+      const message = `Execute step ${stepIndex + 1}: ${stepTitle}\n\n${instructions}`;
       
       const injectResult = await injectMessageToOpenHands(
         this.env.OPENHANDS_API_URL,
@@ -294,14 +322,8 @@ export class ConversationOrchestratorDO_2026A {
         this.flow.state = 'DONE';
         console.log(`[DO:${this.state.id}] All ${this.flow.steps.length} steps completed`);
       } else {
-        // Check if next step requires task fetching
-        const nextStep = this.flow.steps[this.flow.current_step];
-        if (nextStep && (nextStep.requires_task || nextStep.task_id)) {
-          this.flow.state = 'FETCHING_TASK';
-          console.log(`[DO:${this.state.id}] Next step requires task fetching`);
-        } else {
-          this.flow.state = 'SENDING_STEP';
-        }
+        // Always send next step (simplified - remove task fetching logic for now)
+        this.flow.state = 'SENDING_STEP';
         
         // Schedule alarm for next action
         await this.state.storage.setAlarm(Date.now() + 1000);
