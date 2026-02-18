@@ -742,28 +742,49 @@ export class ConversationOrchestratorDO_2026A {
       let responseFound = false;
       let foundAgentWaiting = false;
       
-      // First pass: look for actual response text
-      for (const event of events) {
-        if (event.source !== 'user') {
-          const responseText = event.content || event.message || event.args?.content || '';
-          const agentState = event.agent_state || event.args?.agent_state;
-          const isAgentWaiting = agentState === 'awaiting_user_input';
-          
-          if (responseText && responseText !== this.flow.last_step_response) {
-            // Found actual response text
-            latestAssistantResponse = responseText;
-            responseFound = true;
-            foundAgentWaiting = isAgentWaiting;
-            console.log(`[DO:${this.state.id}] Found ${event.source} response with text (${responseText.length} chars), agent_state=${agentState}`);
-            break;
-          } else if (isAgentWaiting && !responseFound) {
-            // Agent is waiting for user input (step completed)
-            // Store this but continue looking for actual response text
-            latestAssistantResponse = 'Agent completed step and is waiting for user input';
-            responseFound = true;
-            foundAgentWaiting = true;
-            console.log(`[DO:${this.state.id}] Found agent_state: awaiting_user_input (step completed)`);
-            // Don't break - continue looking for actual response text
+      // First, check for two-event pattern: content event followed by awaiting_user_input event
+      // This is the most reliable pattern for detecting completed steps
+      if (events.length >= 2) {
+        const latestEvent = events[0]; // Newest first due to reverse=true
+        const previousEvent = events[1];
+        
+        const latestAgentState = latestEvent.agent_state || latestEvent.args?.agent_state;
+        const previousContent = previousEvent.content || previousEvent.message || previousEvent.args?.content || '';
+        
+        // Pattern: latest event shows awaiting_user_input, previous event has content
+        // This indicates the agent has responded and is waiting for next input
+        if (latestAgentState === 'awaiting_user_input' && previousContent && previousContent !== this.flow.last_step_response) {
+          console.log(`[DO:${this.state.id}] Detected two-event pattern: content + awaiting_user_input`);
+          latestAssistantResponse = previousContent;
+          responseFound = true;
+          foundAgentWaiting = true;
+        }
+      }
+      
+      // Fallback: original single-event detection logic
+      if (!responseFound) {
+        for (const event of events) {
+          if (event.source !== 'user') {
+            const responseText = event.content || event.message || event.args?.content || '';
+            const agentState = event.agent_state || event.args?.agent_state;
+            const isAgentWaiting = agentState === 'awaiting_user_input';
+            
+            if (responseText && responseText !== this.flow.last_step_response) {
+              // Found actual response text
+              latestAssistantResponse = responseText;
+              responseFound = true;
+              foundAgentWaiting = isAgentWaiting;
+              console.log(`[DO:${this.state.id}] Found ${event.source} response with text (${responseText.length} chars), agent_state=${agentState}`);
+              break;
+            } else if (isAgentWaiting && !responseFound) {
+              // Agent is waiting for user input (step completed)
+              // Store this but continue looking for actual response text
+              latestAssistantResponse = 'Agent completed step and is waiting for user input';
+              responseFound = true;
+              foundAgentWaiting = true;
+              console.log(`[DO:${this.state.id}] Found agent_state: awaiting_user_input (step completed)`);
+              // Don't break - continue looking for actual response text
+            }
           }
         }
       }

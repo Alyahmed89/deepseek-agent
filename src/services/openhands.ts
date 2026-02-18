@@ -184,11 +184,13 @@ export async function getOpenHandsConversation(
       }
     }
     
-    // Get ALL events to properly track conversation state
+    // Get events to track conversation state
     // Use ?reverse=true to get newest events first (better for checking current status)
+    // When bypassCache=true (polling), use limit=2 to get only the last 2 events for efficiency
+    const queryParams = bypassCache ? '?reverse=true&limit=2' : '?reverse=true';
     const eventsUrl = apiUrl.endsWith('/') 
-      ? `${apiUrl}conversations/${conversationId}/events?reverse=true`
-      : `${apiUrl}/conversations/${conversationId}/events?reverse=true`;
+      ? `${apiUrl}conversations/${conversationId}/events${queryParams}`
+      : `${apiUrl}/conversations/${conversationId}/events${queryParams}`;
 
     // Add retry logic for events endpoint
     let retryCount = 0;
