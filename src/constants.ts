@@ -2,9 +2,9 @@
 export const MAX_ITERATIONS = 500;
 export const END_FLOW_TOKEN = '[END_FLOW]';
 export const END_FLOW_EARLY_TOKEN = '[END_FLOW_EARLY]';
-export const ALARM_DELAY_INIT = 2000; // 2 seconds for initial alarm (2x from 1s) - Fast start
-export const ALARM_DELAY_WAITING = 5000; // 5 seconds between checks (0.5x from 10s) - FASTER than original!
-export const ALARM_DELAY_ACTIVE = 3000; // 3 seconds when expecting response (same as original) - Maximum speed
+export const ALARM_DELAY_INIT = 30000; // 30 seconds for initial alarm - Cloudflare reliable minimum
+export const ALARM_DELAY_WAITING = 30000; // 30 seconds between checks - Cloudflare reliable minimum
+export const ALARM_DELAY_ACTIVE = 30000; // 30 seconds when expecting response - Cloudflare reliable minimum
 export const DEEPSEEK_TIMEOUT = 10000; // 10 seconds for DeepSeek API
 export const OPENHANDS_TIMEOUT = 180000; // 3 minutes for long operations
 export const OPENHANDS_POLL_TIMEOUT = 10000; // 10 seconds for polling operations (much shorter)
@@ -38,10 +38,10 @@ export const CHECKING_PROMPT = "Checking in: Are you still processing? Please pr
 
 // Adaptive polling optimization
 export const ADAPTIVE_POLLING_ENABLED = true;
-export const MIN_POLL_INTERVAL = 5000; // 5 seconds minimum (same as original) - Maximum speed
-export const MAX_POLL_INTERVAL = 60000; // 60 seconds maximum (same as original)
-export const POLL_INTERVAL_INCREMENT = 5000; // 5 seconds increase each time (same as original)
-export const POLL_INTERVAL_RESET = 10000; // 10 seconds reset on activity (same as original)
+export const MIN_POLL_INTERVAL = 30000; // 30 seconds minimum - Cloudflare reliable minimum
+export const MAX_POLL_INTERVAL = 120000; // 120 seconds maximum - More conservative
+export const POLL_INTERVAL_INCREMENT = 30000; // 30 seconds increase each time
+export const POLL_INTERVAL_RESET = 30000; // 30 seconds reset on activity
 
 // Request optimization
 export const ENABLE_REQUEST_CACHING = true;
