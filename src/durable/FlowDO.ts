@@ -319,7 +319,7 @@ export class ConversationOrchestratorDO_2026A {
     try {
       // Try with new column names first (title, instructions, order_index, task_id, requires_task)
       const result = await this.env.FLOW_RUNS_DB.prepare(
-        'SELECT id as step_id, title, instructions, order_index, task_id, requires_task FROM flow_steps WHERE flow_id = ? ORDER BY order_index'
+        'SELECT id as step_id, step_key, title, instructions, order_index, step_type, default_next_step, task_id, requires_task FROM flow_steps WHERE flow_id = ? ORDER BY order_index'
       ).bind(flowId).all();
       
       console.log(`[DO:${this.state.id}] Loaded ${result.results?.length || 0} steps with new schema for flow ${flowId}`);
@@ -706,6 +706,7 @@ export class ConversationOrchestratorDO_2026A {
     console.log(`[DO:${this.state.id}] Polling OpenHands for response to step ${this.flow.current_step + 1}`);
     
     try {
+      console.log(`[DO:${this.state.id}] Calling getOpenHandsConversation with API URL: ${this.env.OPENHANDS_API_URL}, conversation ID: ${this.flow.openhands_conversation_id}`);
       const { getOpenHandsConversation } = await import('../services/openhands');
       const result = await getOpenHandsConversation(
         this.env.OPENHANDS_API_URL,
@@ -754,13 +755,19 @@ export class ConversationOrchestratorDO_2026A {
         const currentStep = this.flow.steps[this.flow.current_step];
         let nextStepIndex = this.flow.current_step + 1; // Default: next sequential step
         
+        console.log(`[DO:${this.state.id}] Current step index: ${this.flow.current_step}, step object: ${JSON.stringify(currentStep)}`);
+        
         if (currentStep && this.env.FLOW_RUNS_DB) {
           try {
             const { getNextStepBasedOnConditions } = await import('../services/database');
+            // Use step_id (aliased from id in loadFlowSteps) or fall back to id
+            const stepId = currentStep.step_id || currentStep.id;
+            console.log(`[DO:${this.state.id}] Calling getNextStepBasedOnConditions with step_id: ${stepId}, flow_id: ${this.flow.flow_id}`);
+            
             const nextStep = await getNextStepBasedOnConditions(
               this.env.FLOW_RUNS_DB,
               this.flow.flow_id,
-              currentStep.id, // Using id instead of step_id
+              stepId,
               latestAssistantResponse
             );
             
@@ -773,6 +780,7 @@ export class ConversationOrchestratorDO_2026A {
             }
           } catch (error: any) {
             console.error(`[DO:${this.state.id}] Error in conditional branching: ${error.message}`);
+            console.error(`[DO:${this.state.id}] Error stack: ${error.stack}`);
             // Continue with sequential step
           }
         }
