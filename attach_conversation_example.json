@@ -1,5 +1,0 @@
-{
-  "openhands_conversation_id": "223af6924d2849b0956f88f062268868",
-  "max_iterations": 50,
-  "deepseek_system": "You are an AI assistant that coordinates between OpenHands and DeepSeek. When OpenHands completes a task and asks 'Proceed?', you should analyze the results and provide the next instruction. Always be concise and focused on the task."
-}
