@@ -731,13 +731,18 @@ export class ConversationOrchestratorDO_2026A {
       let responseFound = false;
       
       for (const event of events) {
-        if (event.source === 'assistant' && event.action === 'message' && event.message) {
-          // Check if this is a new response (not the same as last one we processed)
-          if (event.message !== this.flow.last_step_response) {
-            latestAssistantResponse = event.message;
-            responseFound = true;
-            console.log(`[DO:${this.state.id}] Found new assistant response (${event.message.length} chars)`);
-            break;
+        // Check for assistant or agent messages
+        if ((event.source === 'assistant' || event.source === 'agent') && event.action === 'message') {
+          // Get response text from either event.message or event.args?.content
+          const responseText = event.message || event.args?.content || '';
+          if (responseText) {
+            // Check if this is a new response (not the same as last one we processed)
+            if (responseText !== this.flow.last_step_response) {
+              latestAssistantResponse = responseText;
+              responseFound = true;
+              console.log(`[DO:${this.state.id}] Found new ${event.source} response (${responseText.length} chars)`);
+              break;
+            }
           }
         }
       }
