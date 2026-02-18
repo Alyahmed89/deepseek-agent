@@ -161,23 +161,27 @@ export async function createOpenHandsConversation(
  * Get OpenHands conversation status and events
  * @param apiUrl OpenHands API base URL
  * @param conversationId Conversation ID to check
+ * @param bypassCache Whether to bypass cache (for flow execution)
  * @returns OpenHandsStatusResult with events or error
  */
 export async function getOpenHandsConversation(
   apiUrl: string,
-  conversationId: string
+  conversationId: string,
+  bypassCache: boolean = false
 ): Promise<OpenHandsStatusResult> {
   try {
-    // Check cache first
-    const cacheKey = getCacheKey(apiUrl, conversationId);
-    const cachedData = getFromCache(cacheKey);
-    
-    if (cachedData) {
-      console.log(`[CACHE HIT] OpenHands conversation ${conversationId}`);
-      return {
-        success: true,
-        events: cachedData.events || []
-      };
+    // Check cache first (unless bypassing)
+    if (!bypassCache && ENABLE_REQUEST_CACHING) {
+      const cacheKey = getCacheKey(apiUrl, conversationId);
+      const cachedData = getFromCache(cacheKey);
+      
+      if (cachedData) {
+        console.log(`[CACHE HIT] OpenHands conversation ${conversationId}`);
+        return {
+          success: true,
+          events: cachedData.events || []
+        };
+      }
     }
     
     // Get ALL events to properly track conversation state

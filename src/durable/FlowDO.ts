@@ -710,7 +710,8 @@ export class ConversationOrchestratorDO_2026A {
       const { getOpenHandsConversation } = await import('../services/openhands');
       const result = await getOpenHandsConversation(
         this.env.OPENHANDS_API_URL,
-        this.flow.openhands_conversation_id
+        this.flow.openhands_conversation_id,
+        true // bypassCache for flow execution
       );
       
       if (!result.success) {
