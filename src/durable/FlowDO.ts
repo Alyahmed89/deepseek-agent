@@ -200,10 +200,13 @@ export class ConversationOrchestratorDO_2026A {
         'SELECT id as step_id, title, instructions, order_index FROM flow_steps WHERE flow_id = ? ORDER BY order_index'
       ).bind(flowId).all();
       
-      console.log(`[DO:${this.state.id}] Loaded ${result.results?.length || 0} steps with new schema`);
+      console.log(`[DO:${this.state.id}] Loaded ${result.results?.length || 0} steps with new schema for flow ${flowId}`);
       if (result.results && result.results.length > 0) {
         console.log(`[DO:${this.state.id}] First step: ${JSON.stringify(result.results[0])}`);
+        console.log(`[DO:${this.state.id}] All step order_index values: ${result.results.map((s: any) => s.order_index).join(', ')}`);
         return result.results;
+      } else {
+        console.log(`[DO:${this.state.id}] No steps found with new schema for flow ${flowId}`);
       }
       
       return [];
@@ -216,7 +219,10 @@ export class ConversationOrchestratorDO_2026A {
           'SELECT id as step_id, prompt as instructions, step_number as order_index FROM flow_steps WHERE flow_id = ? ORDER BY step_number'
         ).bind(flowId).all();
         
-        console.log(`[DO:${this.state.id}] Loaded ${oldResult.results?.length || 0} steps with old schema`);
+        console.log(`[DO:${this.state.id}] Loaded ${oldResult.results?.length || 0} steps with old schema for flow ${flowId}`);
+        if (oldResult.results && oldResult.results.length > 0) {
+          console.log(`[DO:${this.state.id}] All step step_number values: ${oldResult.results.map((s: any) => s.order_index).join(', ')}`);
+        }
         return oldResult.results || [];
       } catch (oldError: any) {
         console.error(`[DO:${this.state.id}] Error loading steps with old schema: ${oldError.message}`);
