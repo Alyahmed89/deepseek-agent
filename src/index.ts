@@ -242,7 +242,7 @@ app.get('/status/:id', async (c) => {
     
     return c.json({
       success: true,
-      conversation: stateData.conversation
+      conversation: stateData
     });
     
   } catch (error: any) {
