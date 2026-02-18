@@ -36,4 +36,8 @@ migrations_dir = "migrations"
 # Durable Object migration for new class (using new_sqlite_classes for free plan)
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["ConversationOrchestratorDO_2026A", "FlowControllerDO"]
+new_sqlite_classes = ["ConversationOrchestratorDO_2026A"]
+
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["FlowControllerDO"]
