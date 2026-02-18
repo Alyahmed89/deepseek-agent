@@ -5,6 +5,7 @@ import { ALARM_DELAY_INIT, ALARM_DELAY_WAITING, ALARM_DELAY_ACTIVE, MIN_POLL_INT
 interface FlowDOEnv {
   FLOW_RUNS_DB: D1Database;
   OPENHANDS_API_URL: string;
+  BASE_URL: string;
 }
 
 export class ConversationOrchestratorDO_2026A {
@@ -442,10 +443,12 @@ export class ConversationOrchestratorDO_2026A {
       // Add step instructions
       message += `\n\n${instructions}`;
       
+      const webhookUrl = `${this.env.BASE_URL}/response/${this.state.id.toString()}`;
       const injectResult = await injectMessageToOpenHands(
         this.env.OPENHANDS_API_URL,
         this.flow.openhands_conversation_id,
-        message
+        message,
+        webhookUrl
       );
       
       if (!injectResult.success) {
