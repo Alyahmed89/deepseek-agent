@@ -608,7 +608,33 @@ export async function getNextStepBasedOnConditions(
         
         switch (condition_type) {
           case 'response_contains':
-            conditionMet = response_text.toLowerCase().includes(condition_value.toLowerCase());
+            // More flexible matching for status conditions
+            const responseLower = response_text.toLowerCase();
+            const conditionLower = condition_value.toLowerCase();
+            
+            // Special handling for status conditions
+            if (conditionLower.includes('status:') && (conditionLower.includes('success') || conditionLower.includes('failed'))) {
+              // Check for status with flexible formatting
+              // Remove all spaces and colons for comparison
+              const normalizedResponse = responseLower.replace(/\s+/g, '').replace(/:/g, '');
+              const normalizedCondition = conditionLower.replace(/\s+/g, '').replace(/:/g, '');
+              
+              // Check if response contains the normalized condition
+              conditionMet = normalizedResponse.includes(normalizedCondition);
+              
+              // Also check for common variations
+              if (!conditionMet) {
+                // Check for "status is success/failed"
+                if (conditionLower.includes('success') && (responseLower.includes('success') || responseLower.includes('successful'))) {
+                  conditionMet = true;
+                } else if (conditionLower.includes('failed') && responseLower.includes('failed')) {
+                  conditionMet = true;
+                }
+              }
+            } else {
+              // Default behavior for other conditions
+              conditionMet = responseLower.includes(conditionLower);
+            }
             break;
           case 'response_matches':
             // Simple exact match (case-insensitive)
