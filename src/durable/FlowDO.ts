@@ -384,6 +384,15 @@ export class ConversationOrchestratorDO_2026A {
     
     // Send step to OpenHands
     if (this.flow.openhands_conversation_id) {
+      // Check if agent is ready to receive input
+      const agentState = await this.getLatestAgentState();
+      if (agentState !== 'awaiting_user_input') {
+        console.log(`[DO:${this.state.id}] Agent not ready (state: ${agentState || 'unknown'}). Cannot send step. Keeping state as WAITING_RESPONSE.`);
+        return;
+      }
+      
+      console.log(`[DO:${this.state.id}] Agent is ready (awaiting_user_input). Proceeding with step injection.`);
+      
       const instructions = step.instructions || 'No instructions provided';
       let message = `Execute step ${stepIndex + 1}: ${stepTitle}`;
       
@@ -452,72 +461,12 @@ export class ConversationOrchestratorDO_2026A {
         // webhookUrl // Temporarily disabled - causes "Internal Server Error"
       );
       
-      let injectionSucceeded = injectResult.success;
-      
-      // If injection fails, check if conversation is stopped and create new one
-      if (!injectResult.success) {
-        console.error(`[DO:${this.state.id}] Failed to send step to OpenHands: ${injectResult.error}`);
-        console.log(`[DO:${this.state.id}] Checking if conversation is stopped, will create new one if needed`);
-        
-        // Check conversation status
-        const statusResult = await getOpenHandsConversation(
-          this.env.OPENHANDS_API_URL,
-          this.flow.openhands_conversation_id,
-          true // bypass cache
-        );
-        
-        if (statusResult.success && statusResult.events) {
-          // Check if conversation is stopped
-          const latestEvent = statusResult.events[0]; // Newest first
-          const agentState = latestEvent.agent_state || latestEvent.args?.agent_state || latestEvent.extras?.agent_state;
-          
-          if (agentState === 'stopped') {
-            console.log(`[DO:${this.state.id}] Conversation is stopped, creating new conversation`);
-            
-            // Create new conversation with repository and branch
-            const createResult = await createOpenHandsConversation(
-              this.env.OPENHANDS_API_URL,
-              message, // Use the current step message as initial message
-              this.flow.repository || 'Alyahmed89/eta', // Default repository
-              this.flow.branch || 'main' // Default branch
-            );
-            if (createResult.success && createResult.conversationId) {
-              this.flow.openhands_conversation_id = createResult.conversationId;
-              console.log(`[DO:${this.state.id}] Created new conversation: ${createResult.conversationId}`);
-              
-              // Retry injection with new conversation
-              injectResult = await injectMessageToOpenHands(
-                this.env.OPENHANDS_API_URL,
-                this.flow.openhands_conversation_id,
-                message
-                // webhookUrl // Temporarily disabled
-              );
-              
-              injectionSucceeded = injectResult.success;
-              
-              if (!injectResult.success) {
-                console.error(`[DO:${this.state.id}] Failed to send step to new conversation: ${injectResult.error}`);
-              } else {
-                console.log(`[DO:${this.state.id}] Step sent to new OpenHands conversation: ${this.flow.openhands_conversation_id}`);
-              }
-            } else {
-              console.error(`[DO:${this.state.id}] Failed to create new conversation: ${createResult.error}`);
-            }
-          } else {
-            console.log(`[DO:${this.state.id}] Conversation not stopped (agent_state: ${agentState}), injection error: ${injectResult.error}`);
-          }
-        } else {
-          console.error(`[DO:${this.state.id}] Failed to check conversation status: ${statusResult.error}`);
-        }
-      } else {
+      if (injectResult.success) {
         console.log(`[DO:${this.state.id}] Step sent to OpenHands conversation: ${this.flow.openhands_conversation_id}`);
-      }
-      
-      // Only set state to WAITING_RESPONSE if injection succeeded
-      if (injectionSucceeded) {
         this.flow.state = 'WAITING_RESPONSE';
         console.log(`[DO:${this.state.id}] Waiting for OpenHands response... (polling on status check)`);
       } else {
+        console.error(`[DO:${this.state.id}] Failed to send step to OpenHands: ${injectResult.error}`);
         // Keep state as SENDING_STEP so we can retry on next status check
         this.flow.state = 'SENDING_STEP';
         console.log(`[DO:${this.state.id}] Injection failed, keeping state as SENDING_STEP to retry on next status check`);
@@ -942,6 +891,58 @@ export class ConversationOrchestratorDO_2026A {
     } catch (error: any) {
       console.error(`[DO:${this.state.id}] Error polling OpenHands: ${error.message}`);
       // Don't schedule alarm - will check again on next status request
+    }
+  }
+
+  /**
+   * Get the latest agent state from OpenHands conversation
+   * Returns 'awaiting_user_input', 'stopped', or null if unknown
+   */
+  private async getLatestAgentState(): Promise<string | null> {
+    if (!this.flow?.openhands_conversation_id) {
+      return null;
+    }
+
+    try {
+      const { getOpenHandsConversation } = await import('../services/openhands');
+      const result = await getOpenHandsConversation(
+        this.env.OPENHANDS_API_URL,
+        this.flow.openhands_conversation_id,
+        true // bypassCache
+      );
+
+      if (!result.success || !result.events) {
+        console.error(`[DO:${this.state.id}] Failed to get conversation for agent state: ${result.error}`);
+        return null;
+      }
+
+      // Events are returned newest first (reverse=true in getOpenHandsConversation)
+      const events = result.events;
+      
+      // Look for the most recent agent_state_changed event
+      for (const event of events) {
+        // Check for agent_state_changed observation
+        if (event.observation === 'agent_state_changed' && event.extras?.agent_state) {
+          return event.extras.agent_state;
+        }
+        
+        // Also check direct agent_state fields
+        if (event.agent_state) {
+          return event.agent_state;
+        }
+        if (event.args?.agent_state) {
+          return event.args.agent_state;
+        }
+        if (event.extras?.agent_state) {
+          return event.extras.agent_state;
+        }
+      }
+
+      // No agent state found
+      return null;
+    } catch (error: any) {
+      console.error(`[DO:${this.state.id}] Error getting agent state: ${error.message}`);
+      return null;
     }
   }
 }
