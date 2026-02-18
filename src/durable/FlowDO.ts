@@ -753,7 +753,7 @@ export class ConversationOrchestratorDO_2026A {
         const latestEvent = events[0]; // Newest first due to reverse=true
         const previousEvent = events[1];
         
-        const latestAgentState = latestEvent.agent_state || latestEvent.args?.agent_state;
+        const latestAgentState = latestEvent.agent_state || latestEvent.args?.agent_state || latestEvent.extras?.agent_state;
         const previousContent = previousEvent.content || previousEvent.message || previousEvent.args?.content || '';
         
         // Pattern: latest event shows awaiting_user_input, previous event has content
@@ -771,7 +771,7 @@ export class ConversationOrchestratorDO_2026A {
         for (const event of events) {
           if (event.source !== 'user') {
             const responseText = event.content || event.message || event.args?.content || '';
-            const agentState = event.agent_state || event.args?.agent_state;
+            const agentState = event.agent_state || event.args?.agent_state || event.extras?.agent_state;
             const isAgentWaiting = agentState === 'awaiting_user_input';
             
             if (responseText && responseText !== this.flow.last_step_response) {
