@@ -281,15 +281,13 @@ export class ConversationOrchestratorDO_2026A {
       
       return new Response(JSON.stringify({
         success: true,
-        flow_id,
-        conversation_id: openhandsResult.conversationId,
-        steps_count: steps.length,
-        message: 'Flow execution started',
-        endpoints: {
-          status: `/status/${this.state.id.toString()}`,
-          response: `/response/${this.state.id.toString()}`,
-          trigger: `/trigger-api-call/${this.state.id.toString()}`
-        }
+        message: "Flow execution started. Progress happens when status is checked.",
+        conversation_id: this.state.id.toString(), // Flow ID (Durable Object ID)
+        flow_id: flow_id, // Flow type (etaflow)
+        note: "Flow execution: DeepSeek → OpenHands → (check status to continue) → Next step",
+        check_status_url: `${this.env.BASE_URL}/status/${this.state.id.toString()}`,
+        openhands_conversation_id: openhandsResult.conversationId, // Actual OpenHands conversation ID
+        steps_count: steps.length
       }), {
         headers: { 'Content-Type': 'application/json' }
       });
@@ -711,27 +709,19 @@ export class ConversationOrchestratorDO_2026A {
   
   // Poll OpenHands for responses when in WAITING_RESPONSE state
   private async pollOpenHandsForResponse(): Promise<void> {
-    if (!this.flow) {
-      console.error(`[DO:${this.state.id}] Cannot poll: no flow`);
-      return;
-    }
-    
-    // FIX: Use correct OpenHands conversation ID
-    const openhandsConversationId = this.flow.openhands_conversation_id || "57b59e888009493ea11d324e06bdb14b";
-    
-    if (!openhandsConversationId) {
-      console.error(`[DO:${this.state.id}] Cannot poll: no conversation ID`);
+    if (!this.flow || !this.flow.openhands_conversation_id) {
+      console.error(`[DO:${this.state.id}] Cannot poll: no flow or conversation ID`);
       return;
     }
     
     console.log(`[DO:${this.state.id}] Polling OpenHands for response to step ${this.flow.current_step + 1}`);
     
     try {
-      console.log(`[DO:${this.state.id}] Calling getOpenHandsConversation with API URL: ${this.env.OPENHANDS_API_URL}, conversation ID: ${openhandsConversationId}`);
+      console.log(`[DO:${this.state.id}] Calling getOpenHandsConversation with API URL: ${this.env.OPENHANDS_API_URL}, conversation ID: ${this.flow.openhands_conversation_id}`);
       const { getOpenHandsConversation } = await import('../services/openhands');
       const result = await getOpenHandsConversation(
         this.env.OPENHANDS_API_URL,
-        openhandsConversationId,
+        this.flow.openhands_conversation_id,
         true // bypassCache for flow execution
       );
       
