@@ -5,6 +5,7 @@ export interface CloudflareBindings {
   DEEPSEEK_API_KEY: string;
   OPENHANDS_API_URL: string;
   CONVERSATIONS: DurableObjectNamespace;
+  FLOW_CONTROLLER: DurableObjectNamespace;
   FLOW_RUNS_DB?: D1Database; // Optional - may not be configured
   RATE_LIMIT_KV?: KVNamespace; // Optional - for rate limiting
 }

@@ -2,6 +2,7 @@
 import { Hono } from 'hono';
 import { CloudflareBindings } from './types';
 import { ConversationOrchestratorDO_2026A } from './durable/FlowDO';
+import { FlowControllerDO } from './durable/FlowControllerDO';
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 
@@ -404,8 +405,77 @@ app.post('/tasks/:id/complete', async (c) => {
   }
 });
 
+// Flow Controller endpoints
+app.post('/flow/init', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { flow_id, steps, openhands_conversation_id } = body;
+    
+    if (!flow_id || !steps || !Array.isArray(steps)) {
+      return c.json({ error: 'Missing required fields: flow_id and steps array' }, 400);
+    }
+
+    const id = c.env.FLOW_CONTROLLER.idFromName(flow_id);
+    const doObj = c.env.FLOW_CONTROLLER.get(id);
+    
+    const response = await doObj.fetch('http://placeholder/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flow_id, steps, openhands_conversation_id })
+    });
+
+    return response;
+  } catch (error: any) {
+    console.error(`[HTTP:FLOW_INIT] Endpoint error: ${error.message}`);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.post('/flow/openhands-response', async (c) => {
+  try {
+    const body = await c.req.json();
+    const { flow_id, conversation_id, event_id, agent_state, content } = body;
+    
+    if (!flow_id || !conversation_id || !event_id) {
+      return c.json({ error: 'Missing required fields: flow_id, conversation_id, event_id' }, 400);
+    }
+
+    const id = c.env.FLOW_CONTROLLER.idFromName(flow_id);
+    const doObj = c.env.FLOW_CONTROLLER.get(id);
+    
+    const response = await doObj.fetch('http://placeholder/openhands-response', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversation_id, event_id, agent_state, content })
+    });
+
+    return response;
+  } catch (error: any) {
+    console.error(`[HTTP:FLOW_OPENHANDS_RESPONSE] Endpoint error: ${error.message}`);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+app.get('/flow/status/:flow_id', async (c) => {
+  try {
+    const flow_id = c.req.param('flow_id');
+    
+    const id = c.env.FLOW_CONTROLLER.idFromName(flow_id);
+    const doObj = c.env.FLOW_CONTROLLER.get(id);
+    
+    const response = await doObj.fetch('http://placeholder/status', {
+      method: 'GET'
+    });
+
+    return response;
+  } catch (error: any) {
+    console.error(`[HTTP:FLOW_STATUS] Endpoint error: ${error.message}`);
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 export default app;
-export { ConversationOrchestratorDO_2026A };
+export { ConversationOrchestratorDO_2026A, FlowControllerDO };
 // Export old class names for reference (not used)
 export { ConversationOrchestratorDO_2026A as ConversationDO_v2 };
 export { ConversationOrchestratorDO_2026A as ConversationDO };

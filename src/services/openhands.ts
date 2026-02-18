@@ -358,6 +358,46 @@ export async function pollAndProcessOpenHandsResponse(
   }
 }
 
+export async function sendStepToOpenHands(
+  apiUrl: string,
+  conversationId: string | null,
+  content: string,
+  config: Record<string, any> = {}
+): Promise<{ success: boolean; conversation_id?: string; error?: string }> {
+  try {
+    let targetConversationId = conversationId;
+    
+    // Create new conversation if needed
+    if (!targetConversationId) {
+      const createResult = await createOpenHandsConversation(apiUrl);
+      if (!createResult.success || !createResult.conversationId) {
+        return { success: false, error: createResult.error || 'Failed to create conversation' };
+      }
+      targetConversationId = createResult.conversationId;
+    }
+    
+    // Inject message
+    const injectResult = await injectMessageToOpenHands(
+      apiUrl,
+      targetConversationId,
+      content,
+      config.webhookUrl
+    );
+    
+    if (!injectResult.success) {
+      return { success: false, error: injectResult.error };
+    }
+    
+    return { 
+      success: true, 
+      conversation_id: targetConversationId 
+    };
+    
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
 export async function injectMessageToOpenHands(
   apiUrl: string,
   conversationId: string,

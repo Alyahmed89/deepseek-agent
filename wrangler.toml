@@ -13,6 +13,10 @@ BASE_URL = "https://deepseek-agent.alyahmed89.workers.dev"
 name = "CONVERSATIONS"
 class_name = "ConversationOrchestratorDO_2026A"
 
+[[durable_objects.bindings]]
+name = "FLOW_CONTROLLER"
+class_name = "FlowControllerDO"
+
 # D1 database for flow runs tracking (etaflow tasks database)
 [[d1_databases]]
 binding = "FLOW_RUNS_DB"
@@ -32,4 +36,4 @@ migrations_dir = "migrations"
 # Durable Object migration for new class (using new_sqlite_classes for free plan)
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["ConversationOrchestratorDO_2026A"]
+new_sqlite_classes = ["ConversationOrchestratorDO_2026A", "FlowControllerDO"]
