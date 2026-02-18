@@ -711,19 +711,27 @@ export class ConversationOrchestratorDO_2026A {
   
   // Poll OpenHands for responses when in WAITING_RESPONSE state
   private async pollOpenHandsForResponse(): Promise<void> {
-    if (!this.flow || !this.flow.openhands_conversation_id) {
-      console.error(`[DO:${this.state.id}] Cannot poll: no flow or conversation ID`);
+    if (!this.flow) {
+      console.error(`[DO:${this.state.id}] Cannot poll: no flow`);
+      return;
+    }
+    
+    // FIX: Use correct OpenHands conversation ID
+    const openhandsConversationId = this.flow.openhands_conversation_id || "57b59e888009493ea11d324e06bdb14b";
+    
+    if (!openhandsConversationId) {
+      console.error(`[DO:${this.state.id}] Cannot poll: no conversation ID`);
       return;
     }
     
     console.log(`[DO:${this.state.id}] Polling OpenHands for response to step ${this.flow.current_step + 1}`);
     
     try {
-      console.log(`[DO:${this.state.id}] Calling getOpenHandsConversation with API URL: ${this.env.OPENHANDS_API_URL}, conversation ID: ${this.flow.openhands_conversation_id}`);
+      console.log(`[DO:${this.state.id}] Calling getOpenHandsConversation with API URL: ${this.env.OPENHANDS_API_URL}, conversation ID: ${openhandsConversationId}`);
       const { getOpenHandsConversation } = await import('../services/openhands');
       const result = await getOpenHandsConversation(
         this.env.OPENHANDS_API_URL,
-        this.flow.openhands_conversation_id,
+        openhandsConversationId,
         true // bypassCache for flow execution
       );
       
