@@ -3,7 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2025-02-13"
 
 [vars]
-OPENHANDS_API_URL = "http://localhost:44808"
+OPENHANDS_API_URL = "https://openhands.anyapp.cfd/api"
 
 [[durable_objects.bindings]]
 name = "CONVERSATIONS"
