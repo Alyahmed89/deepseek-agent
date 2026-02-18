@@ -479,6 +479,3 @@ export { ConversationOrchestratorDO_2026A, FlowControllerDO };
 // Export old class names for reference (not used)
 export { ConversationOrchestratorDO_2026A as ConversationDO_v2 };
 export { ConversationOrchestratorDO_2026A as ConversationDO };
-
-// Explicit export for FlowControllerDO
-export { FlowControllerDO };
