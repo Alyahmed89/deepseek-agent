@@ -408,6 +408,11 @@ app.post('/tasks/:id/complete', async (c) => {
 // Flow Controller endpoints
 app.post('/flow/init', async (c) => {
   try {
+    // Check if FLOW_CONTROLLER is available
+    if (!c.env.FLOW_CONTROLLER) {
+      return c.json({ error: 'Flow functionality is not available in this deployment' }, 503);
+    }
+    
     const body = await c.req.json();
     const { flow_id, steps, openhands_conversation_id } = body;
     
@@ -433,6 +438,11 @@ app.post('/flow/init', async (c) => {
 
 app.post('/flow/openhands-response', async (c) => {
   try {
+    // Check if FLOW_CONTROLLER is available
+    if (!c.env.FLOW_CONTROLLER) {
+      return c.json({ error: 'Flow functionality is not available in this deployment' }, 503);
+    }
+    
     const body = await c.req.json();
     const { flow_id, conversation_id, event_id, agent_state, content } = body;
     
@@ -458,6 +468,11 @@ app.post('/flow/openhands-response', async (c) => {
 
 app.get('/flow/status/:flow_id', async (c) => {
   try {
+    // Check if FLOW_CONTROLLER is available
+    if (!c.env.FLOW_CONTROLLER) {
+      return c.json({ error: 'Flow functionality is not available in this deployment' }, 503);
+    }
+    
     const flow_id = c.req.param('flow_id');
     
     const id = c.env.FLOW_CONTROLLER.idFromName(flow_id);
