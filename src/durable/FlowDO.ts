@@ -44,7 +44,7 @@ export class ConversationOrchestratorDO_2026A {
     });
   }
   
-  // Alarm handler
+  // Alarm handler (kept for compatibility but no longer schedules new alarms)
   async alarm(): Promise<void> {
     try {
       if (!this.flow) {
@@ -58,20 +58,14 @@ export class ConversationOrchestratorDO_2026A {
         // For FETCHING_TASK, just send the step (simplified)
         await this.sendCurrentStep();
       } else if (this.flow.state === 'WAITING_RESPONSE') {
-        // Poll OpenHands for responses
+        // Poll OpenHands for responses (but don't schedule another alarm)
         await this.pollOpenHandsForResponse();
       } else {
         console.log(`[DO:${this.state.id}] Alarm fired but flow in unexpected state: ${this.flow.state}`);
       }
     } catch (error: any) {
       console.error(`[DO:${this.state.id}] Alarm handler error: ${error.message}`);
-      // Try to schedule another alarm to recover
-      try {
-        await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING);
-        console.log(`[DO:${this.state.id}] Scheduled recovery alarm after error`);
-      } catch (scheduleError: any) {
-        console.error(`[DO:${this.state.id}] Failed to schedule recovery alarm: ${scheduleError.message}`);
-      }
+      // Don't schedule another alarm - use on-demand polling instead
     }
   }
   
@@ -231,9 +225,7 @@ export class ConversationOrchestratorDO_2026A {
       
       await this.state.storage.put('flow', this.flow);
       
-      // Schedule alarm to start polling for responses
-      await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_INIT); // Use configured initial delay
-      console.log(`[DO:${this.state.id}] Scheduled alarm for ${ALARM_DELAY_INIT}ms from now to start polling`);
+      console.log(`[DO:${this.state.id}] Flow initialized, waiting for OpenHands response... (polling on status check)`);
       
       // Save flow run to database
       if (this.env.FLOW_RUNS_DB) {
@@ -470,11 +462,7 @@ export class ConversationOrchestratorDO_2026A {
     this.flow.state = 'WAITING_RESPONSE';
     await this.state.storage.put('flow', this.flow);
     
-    // Schedule alarm to start polling for responses
-    await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING); // Use configured waiting delay
-    console.log(`[DO:${this.state.id}] Scheduled alarm for ${ALARM_DELAY_WAITING}ms from now to start polling`);
-    
-    console.log(`[DO:${this.state.id}] Waiting for OpenHands response...`);
+    console.log(`[DO:${this.state.id}] Waiting for OpenHands response... (polling on status check)`);
   }
   
   // Handle OpenHands response with conditional branching
@@ -696,6 +684,17 @@ export class ConversationOrchestratorDO_2026A {
       return new Response(JSON.stringify({ error: 'Flow not initialized' }), { status: 404 });
     }
     
+    // If flow is waiting for response, check for OpenHands responses
+    if (this.flow.state === 'WAITING_RESPONSE') {
+      console.log(`[DO:${this.state.id}] Status check for WAITING_RESPONSE flow, checking for OpenHands responses...`);
+      try {
+        await this.pollOpenHandsForResponse();
+      } catch (error: any) {
+        console.error(`[DO:${this.state.id}] Error checking OpenHands responses during status check: ${error.message}`);
+        // Continue to return status even if polling fails
+      }
+    }
+    
     return new Response(JSON.stringify({
       id: this.flow.id,
       flow_id: this.flow.flow_id,
@@ -732,8 +731,7 @@ export class ConversationOrchestratorDO_2026A {
       
       if (!result.success) {
         console.error(`[DO:${this.state.id}] Failed to poll OpenHands: ${result.error}`);
-        // Schedule another check using configured waiting delay
-        await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING);
+        // Don't schedule alarm - will check again on next status request
         return;
       }
       
@@ -745,23 +743,37 @@ export class ConversationOrchestratorDO_2026A {
       // Events are returned newest first (reverse=true in getOpenHandsConversation)
       let latestAssistantResponse: string | null = null;
       let responseFound = false;
+      let foundAgentWaiting = false;
       
+      // First pass: look for actual response text
       for (const event of events) {
-        // Check for ANY non-user response (assistant, agent, or any non-user source)
-        // Allow any action (message, response, tool_call, etc.)
         if (event.source !== 'user') {
-          // Get response text from event.content, event.message, or event.args?.content
           const responseText = event.content || event.message || event.args?.content || '';
-          if (responseText) {
-            // Check if this is a new response (not the same as last one we processed)
-            if (responseText !== this.flow.last_step_response) {
-              latestAssistantResponse = responseText;
-              responseFound = true;
-              console.log(`[DO:${this.state.id}] Found new ${event.source} response with action=${event.action} (${responseText.length} chars)`);
-              break;
-            }
+          const agentState = event.agent_state || event.args?.agent_state;
+          const isAgentWaiting = agentState === 'awaiting_user_input';
+          
+          if (responseText && responseText !== this.flow.last_step_response) {
+            // Found actual response text
+            latestAssistantResponse = responseText;
+            responseFound = true;
+            foundAgentWaiting = isAgentWaiting;
+            console.log(`[DO:${this.state.id}] Found ${event.source} response with text (${responseText.length} chars), agent_state=${agentState}`);
+            break;
+          } else if (isAgentWaiting && !responseFound) {
+            // Agent is waiting for user input (step completed)
+            // Store this but continue looking for actual response text
+            latestAssistantResponse = 'Agent completed step and is waiting for user input';
+            responseFound = true;
+            foundAgentWaiting = true;
+            console.log(`[DO:${this.state.id}] Found agent_state: awaiting_user_input (step completed)`);
+            // Don't break - continue looking for actual response text
           }
         }
+      }
+      
+      // If we found agent waiting but no response text, use the placeholder
+      if (responseFound && foundAgentWaiting && (!latestAssistantResponse || latestAssistantResponse === 'Agent completed step and is waiting for user input')) {
+        // Already set correctly
       }
       
       if (responseFound && latestAssistantResponse) {
@@ -834,15 +846,13 @@ export class ConversationOrchestratorDO_2026A {
         await this.state.storage.put('flow', this.flow);
         
       } else {
-        // No response yet, check again using configured polling interval
-        console.log(`[DO:${this.state.id}] No new assistant response found. Checking again in ${MIN_POLL_INTERVAL}ms.`);
-        await this.state.storage.setAlarm(Date.now() + MIN_POLL_INTERVAL);
+        // No response yet, will check again on next status request
+        console.log(`[DO:${this.state.id}] No new assistant response found. Will check again on next status request.`);
       }
       
     } catch (error: any) {
       console.error(`[DO:${this.state.id}] Error polling OpenHands: ${error.message}`);
-      // Schedule another check using configured waiting delay
-      await this.state.storage.setAlarm(Date.now() + ALARM_DELAY_WAITING);
+      // Don't schedule alarm - will check again on next status request
     }
   }
 }

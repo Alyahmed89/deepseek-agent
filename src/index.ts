@@ -127,7 +127,7 @@ app.get('/', (c) => {
       'POST /api/conversations/:conversation_id/stop - API: Stop conversation',
       'GET /health - Health check with database connection test'
     ],
-    flow: 'User → /start → DO alarm: DeepSeek → OpenHands → DO alarm: DeepSeek → ...',
+    flow: 'User → /start → DeepSeek → OpenHands → (poll on status check) → DeepSeek → ...',
     rules: [
       'NO simulated OpenHands responses',
       'NO resending same messages',
@@ -201,13 +201,13 @@ app.post('/start', async (c) => {
       console.error(`[RATE_LIMIT] Error tracking active conversation: ${error}`);
     }
     
-    // Return IMMEDIATELY - work happens in alarms
+    // Return IMMEDIATELY - flow progresses when status is checked
     return c.json({
       success: true,
-      message: 'Flow execution started. Work will happen in background via alarms.',
+      message: 'Flow execution started. Progress happens when status is checked.',
       conversation_id: id.toString(),
       flow_id: targetFlowId,
-      note: 'Flow execution: DeepSeek → OpenHands → API validation → Next step',
+      note: 'Flow execution: DeepSeek → OpenHands → (check status to continue) → Next step',
       check_status_url: `${new URL(c.req.url).origin}/status/${id.toString()}`
     });
     
