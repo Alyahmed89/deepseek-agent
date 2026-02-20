@@ -1,0 +1,19 @@
+{
+  "name": "deepseek-agent",
+  "version": "1.0.0",
+  "description": "DeepSeek Agent with flow contract database",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260219.0",
+    "typescript": "^5.0.0",
+    "wrangler": "^4.0.0"
+  }
+}
