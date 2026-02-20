@@ -96,7 +96,8 @@ export default {
           '/tasks/:id': 'Get/update specific task',
           '/artifacts': 'Get all document artifacts',
           '/flow': 'Execute flow contract (process next task)',
-          '/flow/execute': 'Execute flow contract and return result'
+          '/flow/execute': 'Execute flow contract and return result',
+          '/start-flow': 'Start a new flow with specified type (POST with {"flow": "flow_name"})'
         },
         database: {
           tables: ['tasks', 'doc_artifacts', 'doc_task_links'],
@@ -159,6 +160,39 @@ export default {
       if (request.method === 'GET' || request.method === 'POST') {
         const result = db.executeFlowContract();
         return new Response(JSON.stringify(result, null, 2), { headers });
+      }
+    }
+    
+    // Start flow with specific flow type
+    if (url.pathname === '/start-flow') {
+      if (request.method === 'POST') {
+        try {
+          const body = await request.json() as any;
+          const flowType = body.flow || 'default';
+          
+          // Create a new task for the flow
+          const flowTask = db.createTask({
+            type: `flow_${flowType}`,
+            payload: JSON.stringify({ flow: flowType, started_at: new Date().toISOString() }),
+            status: 'pending',
+            priority: 10,
+            success_criteria: 'flow_completed = true'
+          });
+          
+          // Execute the flow contract immediately
+          const executionResult = db.executeFlowContract();
+          
+          return new Response(JSON.stringify({
+            message: `Flow '${flowType}' started`,
+            flow_task: flowTask,
+            execution_result: executionResult
+          }, null, 2), { headers });
+        } catch (error) {
+          return new Response(JSON.stringify({ error: 'Invalid request body' }), {
+            headers,
+            status: 400
+          });
+        }
       }
     }
     
