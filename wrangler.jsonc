@@ -1,10 +1,41 @@
 {
-  "name": "deepseek-flow-agent",
+  "name": "deepseek-agent",
   "main": "src/index.ts",
   "compatibility_date": "2026-02-19",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
     "enabled": true
   },
-  "account_id": "e39371fc55a5c9ef7ed83e16660bd7bb"
+  "account_id": "e39371fc55a5c9ef7ed83e16660bd7bb",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CONVERSATION_DO",
+        "class_name": "ConversationDO"
+      },
+      {
+        "name": "CONVERSATION_DO_V2",
+        "class_name": "ConversationDO_v2"
+      },
+      {
+        "name": "CONVERSATION_ORCHESTRATOR_DO_2026A",
+        "class_name": "ConversationOrchestratorDO_2026A"
+      },
+      {
+        "name": "FLOW_CONTROLLER_DO",
+        "class_name": "FlowControllerDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v3",
+      "new_sqlite_classes": [
+        "ConversationDO",
+        "ConversationDO_v2",
+        "ConversationOrchestratorDO_2026A",
+        "FlowControllerDO"
+      ]
+    }
+  ]
 }

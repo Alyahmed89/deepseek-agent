@@ -4,6 +4,67 @@ export interface Env {
   // Add bindings here (D1, KV, R2, etc.)
 }
 
+// Durable Object classes to maintain compatibility with existing deployment
+export class ConversationDO implements DurableObject {
+  constructor(state: DurableObjectState, env: Env) {
+    // Initialize if needed
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    return new Response(JSON.stringify({
+      message: 'ConversationDO - Compatibility class',
+      status: 'active'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+export class ConversationDO_v2 implements DurableObject {
+  constructor(state: DurableObjectState, env: Env) {
+    // Initialize if needed
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    return new Response(JSON.stringify({
+      message: 'ConversationDO_v2 - Compatibility class',
+      status: 'active'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+export class ConversationOrchestratorDO_2026A implements DurableObject {
+  constructor(state: DurableObjectState, env: Env) {
+    // Initialize if needed
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    return new Response(JSON.stringify({
+      message: 'ConversationOrchestratorDO_2026A - Compatibility class',
+      status: 'active'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
+export class FlowControllerDO implements DurableObject {
+  constructor(state: DurableObjectState, env: Env) {
+    // Initialize if needed
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    return new Response(JSON.stringify({
+      message: 'FlowControllerDO - Compatibility class',
+      status: 'active'
+    }), {
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
