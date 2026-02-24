@@ -250,9 +250,10 @@ export class ConversationOrchestratorDO_2026A {
       // For flow execution, we just need to move to next step
       // Check if we have more steps
       const currentStepIndex = this.conversation.current_step_index || 0;
+      const nextStepIndex = currentStepIndex + 1;
       
-      if (currentStepIndex >= this.conversation.flow_steps.length) {
-        // All steps completed
+      if (nextStepIndex >= this.conversation.flow_steps.length) {
+        // All steps completed (next index would be past the end)
         console.log(`[DO:${this.state.id}] All ${this.conversation.flow_steps.length} steps completed`);
         this.conversation.state = 'DONE';
         this.conversation.status = 'completed';
@@ -269,7 +270,7 @@ export class ConversationOrchestratorDO_2026A {
         });
       } else {
         // More steps to execute
-        console.log(`[DO:${this.state.id}] Moving to next step (${currentStepIndex + 1}/${this.conversation.flow_steps.length})`);
+        console.log(`[DO:${this.state.id}] Moving to next step (${nextStepIndex + 1}/${this.conversation.flow_steps.length})`);
         
         // Cancel any pending alarm
         try {
@@ -277,6 +278,11 @@ export class ConversationOrchestratorDO_2026A {
         } catch (error) {
           // Ignore if no alarm scheduled
         }
+        
+        // Increment step index since current step has completed
+        // This ensures we move to the next step in sequential execution
+        // For conditional branching, getNextStep() will handle updating current_step_index
+        await this.incrementStepIndex();
         
         // Process next step immediately
         this.conversation.state = 'SENDING_STEP';
@@ -288,7 +294,7 @@ export class ConversationOrchestratorDO_2026A {
         return new Response(JSON.stringify({
           success: true,
           message: 'Moving to next step',
-          current_step: currentStepIndex,
+          current_step: nextStepIndex, // Return incremented index
           total_steps: this.conversation.flow_steps.length
         }), {
           headers: { 'Content-Type': 'application/json' }
@@ -708,10 +714,7 @@ export class ConversationOrchestratorDO_2026A {
             if (currentStep.description) {
               taskPrompt += `\n${currentStep.description}`;
             }
-            // ADD STEP INSTRUCTIONS (contains the exact command to execute)
-            if (currentStep.instructions) {
-              taskPrompt += `\n\n${currentStep.instructions}`;
-            }
+            // Note: Step instructions are in the description field (aliased from 'instructions' in SQL)
             
             // REMOVED: Step Type metadata - not needed for OpenHands
             // taskPrompt += `\n\nStep Type: ${currentStep.step_type}`;
@@ -2124,8 +2127,15 @@ export class ConversationOrchestratorDO_2026A {
     
     console.log(`[DO:${this.state.id}] ITERATION_COMPLETE: Iteration ${this.conversation.iteration} completed`);
     
+    // Safety check: Only process if we're actually in ITERATION_COMPLETE state
+    // This prevents duplicate processing if webhook retries
+    if (this.conversation.state !== 'ITERATION_COMPLETE') {
+      console.log(`[DO:${this.state.id}] Not in ITERATION_COMPLETE state (current: ${this.conversation.state}), skipping`);
+      return;
+    }
+    
     // Check if this is ultra-minimal flow mode
-    if (this.conversation.flow_steps && this.conversation.current_step_index !== undefined) {
+    if (this.conversation.flow_steps && (this.conversation.current_step_index !== undefined && this.conversation.current_step_index !== null)) {
       // Ultra-minimal flow mode: Go to next step
       console.log(`[DO:${this.state.id}] Ultra-minimal flow mode: Moving to next step`);
       
@@ -2175,6 +2185,12 @@ export class ConversationOrchestratorDO_2026A {
       
       // Clear pending event content (not needed for ultra-minimal flow)
       this.conversation.pending_event_content = undefined;
+      
+      // Increment step index since current step has completed
+      // This ensures we move to the next step in sequential execution
+      // For conditional branching, getNextStep() already updated current_step_index to the target step
+      // So incrementing here moves us to the step after the conditional target
+      await this.incrementStepIndex();
       
       this.conversation.state = 'SENDING_STEP';
       

@@ -11,7 +11,7 @@ export interface CloudflareBindings {
 }
 
 // Conversation state machine
-export type ConversationState = 'INIT' | 'WAITING_OPENHANDS' | 'ITERATION_COMPLETE' | 'AWAITING_NEXT_ITERATION' | 'DONE';
+export type ConversationState = 'INIT' | 'WAITING_OPENHANDS' | 'ITERATION_COMPLETE' | 'AWAITING_NEXT_ITERATION' | 'DONE' | 'SENDING_STEP';
 
 // Conversation data (persisted in Durable Object storage)
 export interface ConversationData {
@@ -28,7 +28,7 @@ export interface ConversationData {
   max_iterations: number;
   
   // Current status
-  status: 'active' | 'stopped' | 'error';
+  status: 'active' | 'stopped' | 'error' | 'completed';
   error_message?: string;
   
   // Tracking
@@ -76,6 +76,8 @@ export interface ConversationData {
   flow_id?: string; // Flow ID for flow-based execution
   flow_execution_mode?: boolean; // Flag to indicate flow execution mode
   current_flow_step?: number; // Current step in flow execution
+  current_step_index?: number; // Current step index (0-based) for flow execution
+  flow_steps?: StepData[]; // Array of flow steps
   flow_steps_completed?: number[]; // Array of completed step numbers
   current_step?: StepData; // Current step data for flow execution
   last_step_response?: string; // Response from the last completed step (for conditional branching)
