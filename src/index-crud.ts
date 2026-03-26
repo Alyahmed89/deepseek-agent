@@ -1,23 +1,10 @@
 // Hono HTTP API with CRUD endpoints
 import { Hono } from 'hono';
 import { CloudflareBindings } from './types';
-import { ConversationOrchestratorDO_2026A } from './durable/ConversationDO';
 import { crudApi } from './crud-api';
-
-// Dummy FlowControllerDO to satisfy existing binding
-export class FlowControllerDO {
-  constructor(state: any, env: any) {
-    this.state = state;
-    this.env = env;
-  }
-  
-  async fetch(request: Request) {
-    return new Response('FlowControllerDO: Not implemented', { status: 501 });
-  }
-  
-  state: any;
-  env: any;
-}
+import { getFlowSteps, saveFlowRun, updateFlowRunStatus, saveStepRun, saveApiLog } from './services/database';
+import { StepExecutor } from './core/step-executor';
+import { resolveStepInstructions } from './services/stepResolver';
 
 const app = new Hono<{ Bindings: CloudflareBindings }>();
 
@@ -53,6 +40,14 @@ app.get('/health', (c) => {
   return c.json({ status: 'ok', timestamp: Date.now() });
 });
 
+// Simple in-memory flow execution state
+const flowExecutions = new Map<string, {
+  flowId: string;
+  currentStepIndex: number;
+  variables: Record<string, any>;
+  steps: any[];
+}>();
+
 // Start a new flow
 app.post('/start-flow', async (c) => {
   try {
@@ -63,18 +58,35 @@ app.post('/start-flow', async (c) => {
       return c.json({ error: 'flow_id is required' }, 400);
     }
 
-    // Get Durable Object stub
-    const id = c.env.CONVERSATION_DO.idFromName(`flow-${flow_id}-${Date.now()}`);
-    const stub = c.env.CONVERSATION_DO.get(id);
+    // Get flow steps from database
+    const steps = await getFlowSteps(c.env.FLOW_RUNS_DB, flow_id);
+    if (!steps || steps.length === 0) {
+      return c.json({ error: 'Flow not found or has no steps' }, 404);
+    }
 
-    // Start flow
-    const response = await stub.fetch('http://do.internal/start-flow', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ flow_id, inputs })
+    // Create flow run
+    const flowRunId = `flow-run-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    await saveFlowRun(c.env.FLOW_RUNS_DB, {
+      flow_run_id: flowRunId,
+      flow_id,
+      status: 'running',
+      started_at: new Date().toISOString()
     });
 
-    return c.json(await response.json());
+    // Initialize execution state
+    flowExecutions.set(flowRunId, {
+      flowId: flow_id,
+      currentStepIndex: 0,
+      variables: { ...inputs },
+      steps
+    });
+
+    return c.json({
+      success: true,
+      flow_run_id: flowRunId,
+      flow_id,
+      message: 'Flow execution started'
+    });
   } catch (error: any) {
     console.error('Error starting flow:', error);
     return c.json({ error: error.message }, 500);
@@ -85,23 +97,106 @@ app.post('/start-flow', async (c) => {
 app.post('/step', async (c) => {
   try {
     const body = await c.req.json();
-    const { conversation_id } = body;
+    const { flow_run_id } = body;
 
-    if (!conversation_id) {
-      return c.json({ error: 'conversation_id is required' }, 400);
+    if (!flow_run_id) {
+      return c.json({ error: 'flow_run_id is required' }, 400);
     }
 
-    // Get Durable Object stub
-    const id = c.env.CONVERSATION_DO.idFromName(conversation_id);
-    const stub = c.env.CONVERSATION_DO.get(id);
+    // Get execution state
+    const execution = flowExecutions.get(flow_run_id);
+    if (!execution) {
+      return c.json({ error: 'Flow execution not found' }, 404);
+    }
+
+    const { flowId, currentStepIndex, variables, steps } = execution;
+
+    // Check if flow is completed
+    if (currentStepIndex >= steps.length) {
+      await updateFlowRunStatus(c.env.FLOW_RUNS_DB, flow_run_id, 'completed');
+      return c.json({
+        success: true,
+        step_id: null,
+        output: { message: 'Flow completed' },
+        next_step_id: null,
+        next_flow_id: null,
+        variables
+      });
+    }
+
+    // Get current step
+    const step = steps[currentStepIndex];
+    
+    // Resolve step instructions
+    const resolved = await resolveStepInstructions(
+      step,
+      c.env.FLOW_RUNS_DB,
+      c.env,
+      variables
+    );
 
     // Execute step
-    const response = await stub.fetch('http://do.internal/step', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+    const stepExecutor = new StepExecutor(c.env);
+    const context = {
+      variables,
+      ai_output: null,
+      ai_timestamp: Date.now(),
+      step_id: step.id,
+      step_count: currentStepIndex
+    };
+
+    const result = await stepExecutor.executeStep(context, step, 'deepseek');
+
+    // Save step run
+    await saveStepRun(c.env.FLOW_RUNS_DB, {
+      flow_run_id,
+      step_id: step.id,
+      status: 'completed',
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString()
     });
 
-    return c.json(await response.json());
+    // Save API log
+    await saveApiLog(c.env.FLOW_RUNS_DB, {
+      flow_run_id,
+      step_id: step.id,
+      type: 'step_execution',
+      request: {
+        step_fields: Object.keys(step).filter(k => ['command', 'api', 'url', 'instructions'].includes(k)),
+        instructions: resolved.instructions,
+        agent: step.agent || 'deepseek'
+      },
+      response: result.ai_output,
+      status_code: 200,
+      duration_ms: 100
+    });
+
+    // Update variables
+    const updatedVariables = { ...variables, ...result.ai_output.variables };
+
+    // Move to next step
+    const nextStepIndex = currentStepIndex + 1;
+    execution.currentStepIndex = nextStepIndex;
+    execution.variables = updatedVariables;
+
+    // Get next step ID (not index)
+    let nextStepId = null;
+    if (nextStepIndex < steps.length) {
+      const nextStep = steps[nextStepIndex];
+      nextStepId = nextStep.id;
+    }
+
+    // Update execution state
+    flowExecutions.set(flow_run_id, execution);
+
+    return c.json({
+      success: true,
+      step_id: step.id,
+      output: result.ai_output,
+      next_step_id: nextStepId,
+      next_flow_id: step.next_flow_id || null,
+      variables: updatedVariables
+    });
   } catch (error: any) {
     console.error('Error executing step:', error);
     return c.json({ error: error.message }, 500);
@@ -115,5 +210,4 @@ app.all('*', (c) => {
 
 export default app;
 
-// Export Durable Objects
-export { ConversationOrchestratorDO_2026A, FlowControllerDO };
+

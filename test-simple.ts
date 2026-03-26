@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { ConversationOrchestratorDO_2026A } from './src/durable/ConversationDO';
 
 const app = new Hono();
 
@@ -14,4 +13,3 @@ app.get('/api/tasks', (c) => {
 });
 
 export default app;
-export { ConversationOrchestratorDO_2026A };
