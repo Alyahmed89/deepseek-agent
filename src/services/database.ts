@@ -360,60 +360,7 @@ export async function getNextTaskForFlow(db: D1Database, flow_id: string): Promi
   }
 }
 
-/**
- * Get all steps for a flow (for caching)
- * @param db D1Database instance
- * @param flow_id Flow ID
- * @returns Array of flow steps
- */
-export async function getFlowSteps(db: D1Database, flow_id: string): Promise<StepData[]> {
-  try {
-    const query = `
-      SELECT 
-        fs.id as step_id,
-        fs.flow_id,
-        fs.step_key,
-        fs.title,
-        fs.instructions as description,
-        fs.step_type,
-        fs.order_index,
-        fs.page_key,
-        fs.blocking,
-        fs.auto_fail_on_error,
-        fs.retryable,
-        fs.task_id,
-        fs.input_keys,  -- For dynamic API data fetching
-        CASE WHEN fs.output_url IS NOT NULL AND fs.output_url != '' THEN 1 ELSE 0 END as output,
-        fs.output_url,
-        fs.output_auth_token,
-        fs.requires_task,
-        fs.dual_agent,
-        fs.ruler_agent,
-        fs.goal_criteria,
-        fs.max_iterations_per_step,
-        fs.expected_response,
-        fs.use_endpoints,
-        fs.extra_step,
-        fs.next_flow_id
-      FROM flow_steps fs
-      WHERE fs.flow_id = ?
-      ORDER BY fs.order_index
-    `;
-    
-    const result = await db.prepare(query).bind(flow_id).all();
-    
-    if (!result.results || result.results.length === 0) {
-      console.log(`[DATABASE] No steps found for flow ${flow_id}`);
-      return [];
-    }
-    
-    console.log(`[DATABASE] Loaded ${result.results.length} steps for flow ${flow_id}`);
-    return result.results as StepData[];
-  } catch (error: any) {
-    console.error(`[DATABASE] Error getting flow steps for ${flow_id}: ${error.message}`);
-    return [];
-  }
-}
+
 
 /**
  * Get step with task data if task_id is present
@@ -1301,37 +1248,7 @@ export async function getTaskExecutionHistory(
  * @param flow_id Flow ID
  * @returns Promise with flow definition or null
  */
-export async function getFlowDefinition(
-  db: D1Database,
-  flow_id: string
-): Promise<{
-  id: string;
-  name: string;
-  description: string | null;
-  max_iterations: number;
-  repository: string;
-  branch: string;
-  agent?: string;
-} | null> {
-  try {
-    // Use flow_definitions table (primary table)
-    const result = await db.prepare(`
-      SELECT id, name, description, max_iterations, repository, branch, COALESCE(agent, 'openhands') as agent
-      FROM flow_definitions
-      WHERE id = ?
-    `).bind(flow_id).first();
 
-    if (result) {
-      console.log(`[DATABASE] Found flow definition in flow_definitions table for ${flow_id}, agent: ${(result as any).agent}`);
-      return result as any;
-    }
-
-    return null;
-  } catch (error: any) {
-    console.error(`[DATABASE] Error getting flow definition: ${error.message}`);
-    return null;
-  }
-}
 
 /**
  * Get project context for a flow
