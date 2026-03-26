@@ -30,8 +30,5 @@ database_id = "35f4cc1c-5656-4c02-bda8-26b62b63e6ca"
 # binding = "RATE_LIMIT_KV"
 # id = ""  # TODO: Create namespace and add ID here
 
-# Migration to remove old Durable Object classes
-[[migrations]]
-tag = "remove-old-do"
-deleted_classes = ["ConversationOrchestratorDO_2026A", "FlowControllerDO"]
+
 
