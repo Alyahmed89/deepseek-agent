@@ -1,6 +1,19 @@
 // Database service for flow runs tracking
 import { FlowRunData, IterationData, ProjectFact, StepData, StepRunData } from '../types';
 
+// API Log interface
+export interface ApiLogData {
+  id?: string;
+  flow_run_id: string;
+  step_id: string;
+  type: string;
+  request: any;
+  response: any;
+  status_code: number;
+  duration_ms: number;
+  created_at?: number;
+}
+
 /**
  * Save a flow run to the database
  * @param db D1Database instance
@@ -1594,5 +1607,96 @@ export async function getNextFlowBasedOnConditions(
   } catch (error: any) {
     console.error(`[DATABASE] Error getting next flow based on conditions: ${error.message}`);
     return null;
+  }
+}
+
+/**
+ * Get flow definition by ID
+ */
+export async function getFlowDefinition(db: D1Database, flowId: string): Promise<any> {
+  try {
+    const result = await db.prepare(`
+      SELECT id, name, description, created_at
+      FROM flow_definitions
+      WHERE id = ?
+    `).bind(flowId).first();
+    
+    return result;
+  } catch (error: any) {
+    console.error(`[DATABASE] Error getting flow definition: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Get flow steps by flow ID
+ */
+export async function getFlowSteps(db: D1Database, flowId: string): Promise<StepData[]> {
+  try {
+    const result = await db.prepare(`
+      SELECT id, flow_id, step_id, title, description, instructions, agent, created_at
+      FROM flow_steps
+      WHERE flow_id = ?
+      ORDER BY step_id ASC
+    `).bind(flowId).all();
+    
+    return result.results as StepData[];
+  } catch (error: any) {
+    console.error(`[DATABASE] Error getting flow steps: ${error.message}`);
+    return [];
+  }
+}
+
+/**
+ * Save API log entry
+ */
+export async function saveApiLog(db: D1Database, log: ApiLogData): Promise<{success: boolean; error?: string}> {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const id = log.id || crypto.randomUUID();
+    
+    await db.prepare(`
+      INSERT INTO api_logs (
+        id, flow_run_id, step_id, type, request, response, status_code, duration_ms, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      id,
+      log.flow_run_id,
+      log.step_id,
+      log.type,
+      JSON.stringify(log.request),
+      JSON.stringify(log.response),
+      log.status_code,
+      log.duration_ms,
+      now
+    ).run();
+    
+    return { success: true };
+  } catch (error: any) {
+    console.error(`[DATABASE] Error saving API log: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Get API logs for a flow run
+ */
+export async function getApiLogs(db: D1Database, flowRunId: string): Promise<ApiLogData[]> {
+  try {
+    const result = await db.prepare(`
+      SELECT id, flow_run_id, step_id, type, request, response, status_code, duration_ms, created_at
+      FROM api_logs
+      WHERE flow_run_id = ?
+      ORDER BY created_at ASC
+    `).bind(flowRunId).all();
+    
+    return result.results.map((row: any) => ({
+      ...row,
+      request: row.request ? JSON.parse(row.request) : null,
+      response: row.response ? JSON.parse(row.response) : null
+    })) as ApiLogData[];
+  } catch (error: any) {
+    console.error(`[DATABASE] Error getting API logs: ${error.message}`);
+    return [];
   }
 }
