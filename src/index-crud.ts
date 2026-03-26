@@ -114,3 +114,6 @@ app.all('*', (c) => {
 });
 
 export default app;
+
+// Export Durable Objects
+export { ConversationOrchestratorDO_2026A, FlowControllerDO };
