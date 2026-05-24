@@ -138,6 +138,11 @@ export async function runFlow(flowExecutionId: string): Promise<void> {
       const nextStepId = await pro_check(stepResult, flowExecutionId, stepResult?.step_execution_id);
       if (!nextStepId || nextStepId === '__fallback__') break;
 
+      // If looping back to wait-for-prompt, clear old memory so pause step pauses for new input
+      if (nextStepId === 'step-0-wait-for-prompt') {
+        await getSupabase().from('memory').delete().eq('execution_id', flowExecutionId).in('key', ['input_user_prompt', 'cmd']);
+      }
+
       currentStepKnowledge = steps.find(s => s.context?.step_id === nextStepId) || null;
       if (!currentStepKnowledge) {
         console.log(`[engine] no knowledge found for step_id=${nextStepId}`);
