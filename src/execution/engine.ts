@@ -231,7 +231,7 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
     for (const [key, value] of Object.entries(output)) { await storeMemory(flowExecutionId, key, typeof value === "string" ? value : JSON.stringify(value), "flow"); }
     await getSupabase().from("executions").update({ status: "completed", output, updated_at: new Date().toISOString() }).eq("id", stepExecutionId);
     await emitEvent(flowExecutionId, "step.completed", { step_id: ctx.step_id, output });
-    return output;
+    return { ...output, step_execution_id: stepExecutionId };
   }
   // call LLM
   const llmResult = await callLlm(
