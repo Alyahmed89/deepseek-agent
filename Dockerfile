@@ -19,4 +19,4 @@ RUN npm run build
 
 EXPOSE 9090
 
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]
