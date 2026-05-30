@@ -154,6 +154,11 @@ export async function runFlow(flowExecutionId: string): Promise<void> {
 
 // stepNeedsPause — check if a pause step has all required input from memory
 async function stepNeedsPause(stepKnowledge: any, context: Record<string, any>, expectedResponse: any) {
+  // fallback: parse expected_response from prolog if context column is empty
+  if (!expectedResponse || Object.keys(expectedResponse).length === 0) {
+    const m = stepKnowledge.prolog?.match(/expected_response\([^,]+,\s*'([^']+)'\)/);
+    if (m) { try { expectedResponse = JSON.parse(m[1]); } catch {} }
+  }
   const props = expectedResponse?.properties || expectedResponse || {};
   const inputKey = Object.keys(props).find(k => k !== 'chat_message');
   return !(inputKey && context[inputKey] != null && context[inputKey] !== 'null');
