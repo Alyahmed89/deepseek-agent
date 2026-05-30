@@ -72,6 +72,18 @@ async function resolveTags(text: string, execId: string, allKnowledge: any[]): P
         const m = row.prolog.match(new RegExp(`store\\('[^']+',\\s*'${key}',\\s*'([^']+)'\\)`));
         resolved = m?.[1] || "";
       }
+    } else if (tagType === "var") {
+      const row = allKnowledge.find((k: any) => (k.prolog || "").includes(`input('${execId}', '${key}'`));
+      if (row) {
+        const m = row.prolog.match(new RegExp(`input\\('[^']+',\\s*'${key}',\\s*'([^']+)'\\)`));
+        resolved = m?.[1] || "";
+      } else {
+        const storeRow = allKnowledge.find((k: any) => (k.prolog || "").includes(`store('${execId}', '${key}'`));
+        if (storeRow) {
+          const m = storeRow.prolog.match(new RegExp(`store\\('[^']+',\\s*'${key}',\\s*'([^']+)'\\)`));
+          resolved = m?.[1] || "";
+        }
+      }
     } else if (tagType === "fact") {
       const row = allKnowledge.find((k: any) => (k.prolog || "").includes(`${key}(`));
       if (row) {
@@ -85,7 +97,7 @@ async function resolveTags(text: string, execId: string, allKnowledge: any[]): P
 }
 
 function findStepById(stepKnowledge: any, stepId: string): boolean {
-  return (stepKnowledge.prolog || "").includes(`'${stepId}'`);
+  const facts = stepKnowledge.prolog || ""; const m = facts.match(/step_id\([^,]+, '([^']+)'\)/); return m ? m[1] === stepId : false;
 }
 
 export async function runFlow(flowExecutionId: string): Promise<void> {
