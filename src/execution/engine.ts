@@ -30,7 +30,7 @@ export async function createExecution(flowId: string, name?: string, input?: Rec
   return id;
 }
 
-async function getExecution(executionId: string): Promise<any> {
+export async function getExecution(executionId: string): Promise<any> {
   const { data, error } = await getSupabase().from("knowledge").select("id, prolog").eq("id", executionId).single();
   if (error) { console.error("[getExecution] error:", error); return null; }
   const prolog = data?.prolog || "";
@@ -38,6 +38,24 @@ async function getExecution(executionId: string): Promise<any> {
   const statusMatch = prolog.match(/execution_status\([^,]+,\s*'?([^')]+)'?\)/);
   const pausedMatch = prolog.match(/paused_at_step\([^,]+,\s*'?([^')]+)'?\)/);
   return { id: executionId, flow_id: flowIdMatch?.[1], status: statusMatch?.[1], paused_at_step_id: pausedMatch?.[1], prolog };
+}
+
+export async function storeMemory(executionId: string, key: string, value: any, scope: string = 'step'): Promise<void> {
+  const strValue = typeof value === 'string' ? value : JSON.stringify(value);
+  const { error } = await getSupabase()
+    .from('memory')
+    .upsert({ id: randomUUID(), execution_id: executionId, key, value: strValue, scope }, { onConflict: 'execution_id,key' });
+  if (error) console.error('[storeMemory] error:', error);
+}
+
+export async function getMemory(executionId: string): Promise<Record<string, any>> {
+  const { data } = await getSupabase()
+    .from('memory')
+    .select('key, value')
+    .eq('execution_id', executionId);
+  const mem: Record<string, any> = {};
+  for (const row of data || []) mem[row.key] = row.value;
+  return mem;
 }
 
 async function updateExecution(executionId: string, updates: Record<string, any>): Promise<void> {
