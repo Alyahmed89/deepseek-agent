@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { runFlow, getExecution, storeMemory } from '../execution/engine';
+import { runFlow } from '../execution/engine';
 import { getSupabase } from '../supabase';
 
 @Injectable()
