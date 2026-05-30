@@ -2738,3 +2738,6 @@ async function executeAction(
     return { error: { message: err?.message || String(err), action, stack: err?.stack } };
   }
 }
+export async function createExecution(flowId: string, _name?: string, inputVariables?: Record<string, any>): Promise<string> {
+  return createFlowRun(flowId, inputVariables);
+}
