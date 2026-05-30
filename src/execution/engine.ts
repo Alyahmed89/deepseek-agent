@@ -192,8 +192,16 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
       try {
         const schema = z.object(JSON.parse(expectedMatch[1]));
         const result = schema.safeParse(output);
-        await logToKnowledge(flowExecutionId, stepRunId, "zod_validation", result.success ? "Validation passed" : `Validation failed: ${JSON.stringify(result.error?.errors)}`, { success: result.success });
-      } catch(e) { await logToKnowledge(flowExecutionId, stepRunId, "zod_error", `Schema parse error: ${e}`, {}); }
+        if (!result.success) {
+          console.log(`ZOD_VALIDATION_ERROR in step ${stepId}: ${JSON.stringify(result.error?.errors)}`);
+          console.log(`Raw response was: ${JSON.stringify(output)}`);
+        }
+        await logToKnowledge(flowExecutionId, stepRunId, "zod_validation", result.success ? "Validation passed" : `Validation failed: ${JSON.stringify(result.error?.errors)}`, { success: result.success, validation_fallback: !result.success || undefined });
+      } catch(e) { 
+        console.log(`ZOD_VALIDATION_ERROR in step ${stepId}: ${e}`);
+        console.log(`Raw response was: ${JSON.stringify(output)}`);
+        await logToKnowledge(flowExecutionId, stepRunId, "zod_validation", `Schema parse error: ${e}`, { validation_fallback: true }); 
+      }
     }
     await logToKnowledge(flowExecutionId, stepRunId, "action_complete", "Action done", { output });
     const nextMatch = facts.match(/step_output_next\([^,]+,\s*'?([^')]+)'?\)/);
@@ -213,8 +221,16 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
     try {
       const schema = z.object(JSON.parse(expectedMatch[1]));
       const result = schema.safeParse(output);
-      await logToKnowledge(flowExecutionId, stepRunId, "zod_validation", result.success ? "Validation passed" : `Validation failed: ${JSON.stringify(result.error?.errors)}`, { success: result.success });
-    } catch(e) { await logToKnowledge(flowExecutionId, stepRunId, "zod_error", `Schema parse error: ${e}`, {}); }
+        if (!result.success) {
+          console.log(`ZOD_VALIDATION_ERROR in step ${stepId}: ${JSON.stringify(result.error?.errors)}`);
+          console.log(`Raw response was: ${JSON.stringify(output)}`);
+        }
+      await logToKnowledge(flowExecutionId, stepRunId, "zod_validation", result.success ? "Validation passed" : `Validation failed: ${JSON.stringify(result.error?.errors)}`, { success: result.success, validation_fallback: !result.success || undefined });
+    } catch(e) { 
+        console.log(`ZOD_VALIDATION_ERROR in step ${stepId}: ${e}`);
+        console.log(`Raw response was: ${JSON.stringify(output)}`);
+        await logToKnowledge(flowExecutionId, stepRunId, "zod_validation", `Schema parse error: ${e}`, { validation_fallback: true }); 
+    }
   }
   await logToKnowledge(flowExecutionId, stepRunId, "llm_complete", "LLM done", { output });
   const nextMatch = facts.match(/step_output_next\([^,]+,\s*'?([^')]+)'?\)/);
