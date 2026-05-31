@@ -184,7 +184,6 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
     const nextStepId = nextMatch?.[1] || null;
     await logToKnowledge(flowExecutionId, stepRunId, "pause_proceed", `Input found: ${prompt}`, { prompt, next_step_id: nextStepId });
     // Delete the input fact so next pause actually waits
-    await getSupabase().from("knowledge").delete().eq("id", inputFact.id);
     return { prompt, next_step_id: nextStepId };
   }
 
