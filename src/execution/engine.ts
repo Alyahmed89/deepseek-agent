@@ -274,6 +274,14 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
       }
     }
     await logToKnowledge(flowExecutionId, stepRunId, "action_complete", "Action done", { output });
+    // Persist action output as execution_result for downstream steps
+    try {
+      const outputStr = typeof output === 'string' ? output : JSON.stringify(output);
+      await getSupabase().from("knowledge").insert({
+        id: randomUUID(),
+        prolog: `jas_var('var_execution_result', 1, '${flowExecutionId}', 'execution_result', '${outputStr.replace(/'/g, "\\'")}').`,
+      });
+    } catch(e) { console.error("[engine] persist action output error:", e); }
     const nextMatch = facts.match(/step_output_next\([^,]+,\s*'?([^')]+)'?\)/);
     return { ...(Array.isArray(output) ? { rows: output } : output), next_step_id: nextMatch?.[1] || null };
   }
