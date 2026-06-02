@@ -212,7 +212,6 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
       await getSupabase().from("knowledge").insert({
         id: randomUUID(),
         prolog: `jas_var('${consumedVarId}', ${nextVer}, '${flowExecutionId}', 'input_user_prompt', '${safePrompt}').`,
-        namespace: 'jas', level: 'L2'
       });
     } catch(e) { console.error("[engine] consume input error:", e); }
     return { prompt, next_step_id: nextStepId };
@@ -301,7 +300,6 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
       await getSupabase().from("knowledge").insert({
         id: randomUUID(),
         prolog: `jas_var('${varId}', ${nextVer}, '${flowExecutionId}', '${key}', '${safeVal}').`,
-        namespace: 'jas', level: 'L2'
       });
     }
   } catch(e) { console.error("[engine] persist LLM output error:", e); }

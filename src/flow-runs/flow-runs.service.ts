@@ -21,7 +21,6 @@ export class FlowRunsService {
         await supabase.from('knowledge').insert({
           id: randomUUID(),
           prolog: `jas_var('${varId}', ${nextVer}, '${id}', '${key}', '${safeVal}').`,
-          namespace: 'jas', level: 'L2'
         });
         // Keep old input/3 for backward compat during transition
         const factId = `input_${id}_${key}`;
