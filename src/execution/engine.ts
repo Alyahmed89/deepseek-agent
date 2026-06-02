@@ -74,7 +74,7 @@ async function resolveTags(text: string, execId: string, allKnowledge: any[]): P
     } else if (tagType === "var") {
       // Try flow_var first (max version)
       const varMatches = allKnowledge
-        .filter((k: any) => (k.prolog || "").includes(`flow_var('${execId}', '${key}',`)
+        .filter((k: any) => (k.prolog || "").includes(`flow_var('${execId}', '${key}',`))
         .sort((a: any, b: any) => ((b.created_at) || "").localeCompare((a.created_at) || ""));
       if (varMatches.length > 0) {
         const m = varMatches[0].prolog.match(/flow_var\('[^']+',\s*'[^']+',\s*\d+,\s*'([^']*)'\)/);
