@@ -72,13 +72,12 @@ async function resolveTags(text: string, execId: string, allKnowledge: any[]): P
         resolved = m?.[1] || "";
       }
     } else if (tagType === "var") {
-      // Try jas_var first (max version)
+      // Try flow_var first (max version)
       const varMatches = allKnowledge
-        .filter((k: any) => (k.prolog || "").includes(`jas_var('var_${key}',`) &&
-                            (k.prolog || "").includes(`'${execId}'`))
+        .filter((k: any) => (k.prolog || "").includes(`flow_var('${execId}', '${key}',`)
         .sort((a: any, b: any) => ((b.created_at) || "").localeCompare((a.created_at) || ""));
       if (varMatches.length > 0) {
-        const m = varMatches[0].prolog.match(/jas_var\('[^']+',\s*\d+,\s*'[^']+',\s*'[^']+',\s*'([^']*)'\)/);
+        const m = varMatches[0].prolog.match(/flow_var\('[^']+',\s*'[^']+',\s*\d+,\s*'([^']*)'\)/);
         resolved = m?.[1] || "";
       }
       // Fallback: input/3
@@ -206,37 +205,48 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
   await logToKnowledge(flowExecutionId, stepRunId, "run_step", `Running ${stepType} step ${stepId}`, { step_type: stepType, step_id: stepId });
 
   if (stepType === "pause") {
-    // Find input: input/3 first (upserted by resume, always latest), then jas_var input_user_prompt
+    // Read expected input key from vault rule: expected_input_key(stepAtom, 'key')
+    const stepAtomRow = allKnowledge.find((k: any) =>
+      (k.prolog || "").includes("step_id(") &&
+      (k.prolog || "").includes(`'${stepId}'`));
+    const atomMatch = stepAtomRow?.prolog?.match(/step_id\((\w+),/);
+    const stepAtom = atomMatch?.[1] || "";
+    const expectedKeyRow = allKnowledge.find((k: any) =>
+      (k.prolog || "").includes(`expected_input_key(${stepAtom},`));
+    const keyMatch = expectedKeyRow?.prolog?.match(/expected_input_key\((\w+),\s*'([^']+)'\)/);
+    const inputKey = keyMatch?.[2] || "";
+    // Find input: input/3 first (upserted by resume, always latest)
     const inputFact3 = allKnowledge.find((k: any) =>
-      (k.prolog || "").includes(`input('${flowExecutionId}'`));
-    const jasVarInput = !inputFact3 ? allKnowledge
-      .filter((k: any) => (k.prolog || "").includes("jas_var(") &&
-                          (k.prolog || "").includes(`'${flowExecutionId}'`) &&
-                          (k.prolog || "").includes("input_user_prompt"))
-      .sort((a: any, b: any) => ((b.created_at) || "").localeCompare((a.created_at) || ""))
-    : [];
-    const inputFact = inputFact3 || (jasVarInput.length > 0 ? jasVarInput[0] : null);
+      (k.prolog || "").includes(`input('${flowExecutionId}', '${inputKey}'`));
+    // Check consumed markers: flow_var with consumed_ prefix
+    const consumedKey = `consumed_${inputKey}`;
+    const consumedVars = allKnowledge.filter((k: any) =>
+      (k.prolog || "").includes(`flow_var('${flowExecutionId}', '${consumedKey}',`));
+    const inputFacts = allKnowledge.filter((k: any) =>
+      (k.prolog || "").includes(`input('${flowExecutionId}', '${inputKey}'`));
+    // Wait if all inputs consumed
+    if (consumedVars.length >= inputFacts.length) {
+      await logToKnowledge(flowExecutionId, stepRunId, "pause_wait", "No new input, pausing", {});
+      return { status: "paused" };
+    }
+    const inputFact = inputFact3;
     if (!inputFact) {
       await logToKnowledge(flowExecutionId, stepRunId, "pause_wait", "No input found, pausing", {});
       return { status: "paused" };
     }
     let prompt = "";
-    // Try input/3 first, fallback to jas_var input_user_prompt
     const input3Match = inputFact.prolog.match(/input\('[^']+',\s*'[^']+',\s*'([^']+)'\)/);
     if (input3Match) {
       prompt = input3Match[1];
-    } else {
-      const jasVarMatch = inputFact.prolog.match(/jas_var\('[^']+',\s*\d+,\s*'[^']+',\s*'[^']+',\s*'([^']*)'\)/);
-      prompt = jasVarMatch?.[1] || "";
     }
-    // Try jas_var first (versioned format), fallback to input/3
-    const jasVarMatch = inputFact.prolog.match(/jas_var\('[^']+',\s*\d+,\s*'[^']+',\s*'[^']+',\s*'([^']*)'\)/);
-    if (jasVarMatch) {
-      prompt = jasVarMatch[1];
-    } else {
-      const promptMatch = inputFact.prolog.match(/input\('[^']+',\s*'[^']+',\s*'([^']+)'\)/);
-      prompt = promptMatch?.[1] || "";
-    }
+    // Mark input as consumed so next loop waits
+    const existingConsumed = allKnowledge.filter((k: any) =>
+      (k.prolog || "").includes(`flow_var('${flowExecutionId}', '${consumedKey}',`));
+    const consumedVersion = existingConsumed.length + 1;
+    await getSupabase().from("knowledge").insert({
+      id: randomUUID(),
+      prolog: `flow_var('${flowExecutionId}', '${consumedKey}', ${consumedVersion}, 'true').`,
+    });
     const nextMatch = facts.match(/step_output_next\([^,]+,\s*'?([^')]+)'?\)/);
     const nextStepId = nextMatch?.[1] || null;
     await logToKnowledge(flowExecutionId, stepRunId, "pause_proceed", `Input found: ${prompt}`, { prompt, next_step_id: nextStepId });
@@ -285,12 +295,24 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
       }
     }
     await logToKnowledge(flowExecutionId, stepRunId, "action_complete", "Action done", { output });
-    // Persist action output as execution_result for downstream steps
+    // Persist action output with key from vault rule: output_key(stepAtom, 'key')
     try {
+      const stepAtomRow = allKnowledge.find((k: any) =>
+        (k.prolog || "").includes("step_id(") &&
+        (k.prolog || "").includes(`'${stepId}'`));
+      const atomMatch2 = stepAtomRow?.prolog?.match(/step_id\((\w+),/);
+      const stepAtom2 = atomMatch2?.[1] || "";
+      const outputKeyRow = allKnowledge.find((k: any) =>
+        (k.prolog || "").includes(`output_key(${stepAtom2},`));
+      const outKeyMatch = outputKeyRow?.prolog?.match(/output_key\((\w+),\s*'([^']+)'\)/);
+      const outputKey = outKeyMatch?.[2] || "";
+      const existingOutVars = allKnowledge.filter((k: any) =>
+        (k.prolog || "").includes(`flow_var('${flowExecutionId}', '${outputKey}',`));
+      const nextOutVersion = existingOutVars.length + 1;
       const outputStr = typeof output === 'string' ? output : JSON.stringify(output);
       await getSupabase().from("knowledge").insert({
         id: randomUUID(),
-        prolog: `jas_var('var_execution_result', 1, '${flowExecutionId}', 'execution_result', '${outputStr.replace(/'/g, "\\'")}').`,
+        prolog: `flow_var('${flowExecutionId}', '${outputKey}', ${nextOutVersion}, '${outputStr.replace(/'/g, "\\'")}').`,
       });
     } catch(e) { console.error("[engine] persist action output error:", e); }
     const nextMatch = facts.match(/step_output_next\([^,]+,\s*'?([^')]+)'?\)/);
@@ -322,18 +344,17 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
     }
   }
   await logToKnowledge(flowExecutionId, stepRunId, "llm_complete", "LLM done", { output });
-  // Persist each LLM output key as a versioned jas_var fact
+  // Persist each LLM output key as a versioned flow_var fact
   try {
     for (const [key, value] of Object.entries(output)) {
       const varId = `var_${key}`;
       const existingVar = allKnowledge.filter((k: any) =>
-        (k.prolog || "").includes(`jas_var('${varId}',`) &&
-        (k.prolog || "").includes(`'${flowExecutionId}'`));
+        (k.prolog || "").includes(`flow_var('${flowExecutionId}', '${key}',`));
       const nextVer = existingVar.length + 1;
       const safeVal = (typeof value === "object" ? JSON.stringify(value) : String(value)).replace(/'/g, "\\'");
       await getSupabase().from("knowledge").insert({
         id: randomUUID(),
-        prolog: `jas_var('${varId}', ${nextVer}, '${flowExecutionId}', '${key}', '${safeVal}').`,
+        prolog: `flow_var('${flowExecutionId}', '${key}', ${nextVer}, '${safeVal}').`,
       });
     }
   } catch(e) { console.error("[engine] persist LLM output error:", e); }

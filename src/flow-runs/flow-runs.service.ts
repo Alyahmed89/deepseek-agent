@@ -10,17 +10,17 @@ export class FlowRunsService {
   async resume(id: string, userInput?: Record<string, any>) {
     if (userInput) {
       for (const [key, value] of Object.entries(userInput)) {
-        // Write as jas_var with version bump
+        // Write as flow_var with version bump
         const varId = `var_${key}`;
         const { count } = await supabase
           .from('knowledge')
           .select('*', { count: 'exact', head: true })
-          .like('prolog', `jas_var('${varId}',%,'${id}','${key}',%`);
+          .like('prolog', `flow_var('${id}','${key}',%,%`);
         const nextVer = (count || 0) + 1;
         const safeVal = (typeof value === "object" ? JSON.stringify(value) : String(value)).replace(/'/g, "\\'");
         await supabase.from('knowledge').insert({
           id: randomUUID(),
-          prolog: `jas_var('${varId}', ${nextVer}, '${id}', '${key}', '${safeVal}').`,
+          prolog: `flow_var('${id}', '${key}', ${nextVer}, '${safeVal}').`,
         });
         // Keep old input/3 for backward compat during transition
         const factId = `input_${id}_${key}`;
