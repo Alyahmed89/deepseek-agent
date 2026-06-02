@@ -6,7 +6,7 @@ import { z } from "zod";
 const PROLOG_URL = process.env.PROLOG_URL || "https://prolog.anyapp.cfd";
 const runningFlows = new Set<string>();
 async function getAllKnowledge(): Promise<any[]> {
-  const { data, error } = await getSupabase().from("knowledge").select("id, prolog").range(0, 100000);
+  const { data, error } = await getSupabase().from("knowledge").select("id, prolog, created_at").range(0, 100000);
   if (error) { console.error("[getAllKnowledge] error:", error); return []; }
   return data || [];
 }
