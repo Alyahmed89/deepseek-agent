@@ -5,11 +5,6 @@ import { z } from "zod";
 
 const PROLOG_URL = process.env.PROLOG_URL || "https://prolog.anyapp.cfd";
 const runningFlows = new Set<string>();
-const STEP_ALIASES: Record<string, string> = {
-  "step-0-wait": "step-wait-jas",
-};
-const normalize = (id: string) => STEP_ALIASES[id] ?? id;
-
 async function getAllKnowledge(): Promise<any[]> {
   const { data, error } = await getSupabase().from("knowledge").select("id, prolog");
   if (error) { console.error("[getAllKnowledge] error:", error); return []; }
@@ -201,19 +196,6 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
     const nextMatch = facts.match(/step_output_next\([^,]+,\s*'?([^')]+)'?\)/);
     const nextStepId = nextMatch?.[1] || null;
     await logToKnowledge(flowExecutionId, stepRunId, "pause_proceed", `Input found: ${prompt}`, { prompt, next_step_id: nextStepId });
-    // Write consumed input as jas_var with version bump so next pause can wait
-    try {
-      const consumedVarId = `var_input_user_prompt`;
-      const existingVar = allKnowledge.filter((k: any) =>
-        (k.prolog || "").includes(`jas_var('${consumedVarId}',`) &&
-        (k.prolog || "").includes(`'${flowExecutionId}'`));
-      const nextVer = existingVar.length + 1;
-      const safePrompt = String(prompt).replace(/'/g, "\\'");
-      await getSupabase().from("knowledge").insert({
-        id: randomUUID(),
-        prolog: `jas_var('${consumedVarId}', ${nextVer}, '${flowExecutionId}', 'input_user_prompt', '${safePrompt}').`,
-      });
-    } catch(e) { console.error("[engine] consume input error:", e); }
     return { prompt, next_step_id: nextStepId };
   }
 
