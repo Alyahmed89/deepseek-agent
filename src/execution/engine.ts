@@ -224,19 +224,26 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
           (k.prolog || "").includes(`input('${flowExecutionId}'`));
     // Check consumed markers: flow_var with consumed_ prefix
     const consumedKey = `consumed_${inputKey}`;
-    const consumedVars = allKnowledge.filter((k: any) =>
-      (k.prolog || "").includes(`flow_var('${flowExecutionId}', '${consumedKey}',`));
     const inputFacts = inputKey
       ? allKnowledge.filter((k: any) =>
           (k.prolog || "").includes(`input('${flowExecutionId}', '${inputKey}'`))
       : allKnowledge.filter((k: any) =>
           (k.prolog || "").includes(`input('${flowExecutionId}'`));
-    // Wait if all inputs consumed
-    if (consumedVars.length >= inputFacts.length) {
+    // Get latest consumed marker
+    const consumedFacts = allKnowledge.filter((k: any) =>
+      (k.prolog || "").includes(`flow_var('${flowExecutionId}', '${consumedKey}',`))
+      .sort((a: any, b: any) => ((b.created_at) || "").localeCompare((a.created_at) || ""));
+    const lastConsumedAt = consumedFacts[0]?.created_at ?? "1970-01-01";
+    // Find input facts written AFTER the last consumed marker
+    const newInputs = inputFacts.filter((k: any) =>
+      (k.created_at ?? "") > lastConsumedAt);
+    if (newInputs.length === 0) {
       await logToKnowledge(flowExecutionId, stepRunId, "pause_wait", "No new input, pausing", {});
       return { status: "paused" };
     }
-    const inputFact = inputFact3;
+    // Use the earliest unconsumed input
+    const inputFact = newInputs.sort((a: any, b: any) =>
+      (a.created_at ?? "").localeCompare(b.created_at ?? ""))[0];
     if (!inputFact) {
       await logToKnowledge(flowExecutionId, stepRunId, "pause_wait", "No input found, pausing", {});
       return { status: "paused" };
