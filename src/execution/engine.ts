@@ -6,7 +6,7 @@ import { z } from "zod";
 const PROLOG_URL = process.env.PROLOG_URL || "https://prolog.anyapp.cfd";
 const runningFlows = new Set<string>();
 async function getAllKnowledge(): Promise<any[]> {
-  const { data, error } = await getSupabase().from("knowledge").select("id, prolog").limit(10000);
+  const { data, error } = await getSupabase().from("knowledge").select("id, prolog").range(0, 100000);
   if (error) { console.error("[getAllKnowledge] error:", error); return []; }
   return data || [];
 }
@@ -134,10 +134,14 @@ export async function runFlow(flowExecutionId: string): Promise<void> {
     });
 
     // Resolve first step from ALL knowledge routing rules, not just execution record
-    // Search all knowledge for the start routing rule
-    const nextStepFact = (knowledge || []).find((k: any) =>
-      k && k.prolog && k.prolog.includes("next_step(start,"));
-    const firstStepMatch = nextStepFact?.prolog?.match(/next_step\(start,\s*'?([^')]+)'?\)/);
+    // Look up the start routing rule directly from Supabase
+    const { data: routeRows } = await getSupabase()
+      .from("knowledge")
+      .select("prolog")
+      .like("prolog", "next_step(start,%")
+      .limit(1);
+    const routeProlog = (routeRows && routeRows.length > 0) ? routeRows[0].prolog : "";
+    const firstStepMatch = routeProlog.match(/next_step\(start,\s*'?([^')]+)'?\)/);
     const firstStepId = flowExec.paused_at_step_id || firstStepMatch?.[1];
     if (!firstStepId) {
       console.log(`[engine] no start step found for ${flowExecutionId}`);
