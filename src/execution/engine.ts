@@ -138,6 +138,7 @@ export async function runFlow(flowExecutionId: string): Promise<void> {
       .from("knowledge")
       .select("prolog")
       .like("prolog", "next_step(start,%")
+      .order("created_at", { ascending: false })
       .limit(1);
     const routeProlog = (routeRows && routeRows.length > 0) ? routeRows[0].prolog : "";
     const firstStepMatch = routeProlog.match(/next_step\(start,\s*'?([^')]+)'?\)/);
