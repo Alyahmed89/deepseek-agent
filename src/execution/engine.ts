@@ -319,7 +319,7 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
         (k.prolog || "").includes(`jas_var('${varId}',`) &&
         (k.prolog || "").includes(`'${flowExecutionId}'`));
       const nextVer = existingVar.length + 1;
-      const safeVal = String(value).replace(/'/g, "\\'");
+      const safeVal = (typeof value === "object" ? JSON.stringify(value) : String(value)).replace(/'/g, "\\'");
       await getSupabase().from("knowledge").insert({
         id: randomUUID(),
         prolog: `jas_var('${varId}', ${nextVer}, '${flowExecutionId}', '${key}', '${safeVal}').`,

@@ -17,7 +17,7 @@ export class FlowRunsService {
           .select('*', { count: 'exact', head: true })
           .like('prolog', `jas_var('${varId}',%,'${id}','${key}',%`);
         const nextVer = (count || 0) + 1;
-        const safeVal = String(value).replace(/'/g, "\\'");
+        const safeVal = (typeof value === "object" ? JSON.stringify(value) : String(value)).replace(/'/g, "\\'");
         await supabase.from('knowledge').insert({
           id: randomUUID(),
           prolog: `jas_var('${varId}', ${nextVer}, '${id}', '${key}', '${safeVal}').`,
