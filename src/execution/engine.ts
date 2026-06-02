@@ -206,18 +206,29 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
   await logToKnowledge(flowExecutionId, stepRunId, "run_step", `Running ${stepType} step ${stepId}`, { step_type: stepType, step_id: stepId });
 
   if (stepType === "pause") {
-    // Check both input/3 and jas_var/5 facts (any key, generic)
-    const inputFactCheck = (k: any) => {
-      const p = k.prolog || "";
-      return p.includes(`input('${flowExecutionId}'`) || 
-             (p.includes("jas_var(") && p.includes(`'${flowExecutionId}'`));
-    };
-    const inputFact = allKnowledge.find((k: any) => inputFactCheck(k));
+    // Find input: input/3 first (upserted by resume, always latest), then jas_var input_user_prompt
+    const inputFact3 = allKnowledge.find((k: any) =>
+      (k.prolog || "").includes(`input('${flowExecutionId}'`));
+    const jasVarInput = !inputFact3 ? allKnowledge
+      .filter((k: any) => (k.prolog || "").includes("jas_var(") &&
+                          (k.prolog || "").includes(`'${flowExecutionId}'`) &&
+                          (k.prolog || "").includes("input_user_prompt"))
+      .sort((a: any, b: any) => ((b.created_at) || "").localeCompare((a.created_at) || ""))
+    : [];
+    const inputFact = inputFact3 || (jasVarInput.length > 0 ? jasVarInput[0] : null);
     if (!inputFact) {
       await logToKnowledge(flowExecutionId, stepRunId, "pause_wait", "No input found, pausing", {});
       return { status: "paused" };
     }
     let prompt = "";
+    // Try input/3 first, fallback to jas_var input_user_prompt
+    const input3Match = inputFact.prolog.match(/input\('[^']+',\s*'[^']+',\s*'([^']+)'\)/);
+    if (input3Match) {
+      prompt = input3Match[1];
+    } else {
+      const jasVarMatch = inputFact.prolog.match(/jas_var\('[^']+',\s*\d+,\s*'[^']+',\s*'[^']+',\s*'([^']*)'\)/);
+      prompt = jasVarMatch?.[1] || "";
+    }
     // Try jas_var first (versioned format), fallback to input/3
     const jasVarMatch = inputFact.prolog.match(/jas_var\('[^']+',\s*\d+,\s*'[^']+',\s*'[^']+',\s*'([^']*)'\)/);
     if (jasVarMatch) {
