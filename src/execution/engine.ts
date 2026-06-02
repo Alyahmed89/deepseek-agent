@@ -186,13 +186,26 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
   await logToKnowledge(flowExecutionId, stepRunId, "run_step", `Running ${stepType} step ${stepId}`, { step_type: stepType, step_id: stepId });
 
   if (stepType === "pause") {
-    const inputFact = allKnowledge.find((k: any) => (k.prolog || "").includes(`input('${flowExecutionId}'`));
+    // Check both input/3 and jas_var/5 facts (any key, generic)
+    const inputFactCheck = (k: any) => {
+      const p = k.prolog || "";
+      return p.includes(`input('${flowExecutionId}'`) || 
+             (p.includes("jas_var(") && p.includes(`'${flowExecutionId}'`));
+    };
+    const inputFact = allKnowledge.find((k: any) => inputFactCheck(k));
     if (!inputFact) {
       await logToKnowledge(flowExecutionId, stepRunId, "pause_wait", "No input found, pausing", {});
       return { status: "paused" };
     }
-    const promptMatch = inputFact.prolog.match(/input\('[^']+',\s*'[^']+',\s*'([^']+)'\)/);
-    const prompt = promptMatch?.[1] || "";
+    let prompt = "";
+    // Try jas_var first (versioned format), fallback to input/3
+    const jasVarMatch = inputFact.prolog.match(/jas_var\('[^']+',\s*\d+,\s*'[^']+',\s*'[^']+',\s*'([^']*)'\)/);
+    if (jasVarMatch) {
+      prompt = jasVarMatch[1];
+    } else {
+      const promptMatch = inputFact.prolog.match(/input\('[^']+',\s*'[^']+',\s*'([^']+)'\)/);
+      prompt = promptMatch?.[1] || "";
+    }
     const nextMatch = facts.match(/step_output_next\([^,]+,\s*'?([^')]+)'?\)/);
     const nextStepId = nextMatch?.[1] || null;
     await logToKnowledge(flowExecutionId, stepRunId, "pause_proceed", `Input found: ${prompt}`, { prompt, next_step_id: nextStepId });
