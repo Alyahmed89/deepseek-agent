@@ -132,10 +132,24 @@ export async function runFlow(flowExecutionId: string): Promise<void> {
       return facts.includes("step_type(") || facts.includes("step_id(");
     });
 
-    const execProlog = flowExec.prolog || "";
-    const firstStepMatch = execProlog.match(/next_step\(start,\s*'?([^')]+)'?\)/);
-    const firstStepId = flowExec.paused_at_step_id || firstStepMatch?.[1] || "step-0-wait";
-    let currentStep = steps.find((s: any) => findStepById(s, firstStepId)) || steps[0] || null;
+    // Resolve first step from ALL knowledge routing rules, not just execution record
+    const nextStepFact = knowledge.find((k: any) =>
+      (k.prolog || "").includes("next_step(start,"));
+    const firstStepMatch = nextStepFact?.prolog?.match(/next_step\(start,\s*'?([^')]+)'?\)/);
+    const firstStepId = flowExec.paused_at_step_id || firstStepMatch?.[1];
+    if (!firstStepId) {
+      console.log(`[engine] no start step found for ${flowExecutionId}`);
+      await logToKnowledge(flowExecutionId, "engine", "flow_error", "No start step routing rule found", {});
+      await updateExecution(flowExecutionId, { status: "failed" });
+      return;
+    }
+    let currentStep = steps.find((s: any) => findStepById(s, firstStepId));
+    if (!currentStep) {
+      console.log(`[engine] step ${firstStepId} not found in knowledge`);
+      await logToKnowledge(flowExecutionId, "engine", "flow_error", `Step ${firstStepId} not found`, {});
+      await updateExecution(flowExecutionId, { status: "failed" });
+      return;
+    }
 
     while (currentStep) {
       const facts = currentStep.prolog || "";
