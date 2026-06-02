@@ -226,6 +226,7 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
     const inputFacts = allKnowledge.filter((k: any) =>
       (k.prolog || "").includes(`input('${flowExecutionId}', '${inputKey}'`));
     // Wait if all inputs consumed
+    console.log(`[engine] pause chk stepId=${stepId} key=${inputKey} consumed=${consumedVars.length} inputs=${inputFacts.length} go=${consumedVars.length < inputFacts.length}`);
     if (consumedVars.length >= inputFacts.length) {
       await logToKnowledge(flowExecutionId, stepRunId, "pause_wait", "No new input, pausing", {});
       return { status: "paused" };
