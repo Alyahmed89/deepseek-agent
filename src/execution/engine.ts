@@ -217,16 +217,21 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
     const keyMatch = expectedKeyRow?.prolog?.match(/expected_input_key\((\w+),\s*'([^']+)'\)/);
     const inputKey = keyMatch?.[2] || "";
     // Find input: input/3 first (upserted by resume, always latest)
-    const inputFact3 = allKnowledge.find((k: any) =>
-      (k.prolog || "").includes(`input('${flowExecutionId}', '${inputKey}'`));
+    const inputFact3 = inputKey
+      ? allKnowledge.find((k: any) =>
+          (k.prolog || "").includes(`input('${flowExecutionId}', '${inputKey}'`))
+      : allKnowledge.find((k: any) =>
+          (k.prolog || "").includes(`input('${flowExecutionId}'`));
     // Check consumed markers: flow_var with consumed_ prefix
     const consumedKey = `consumed_${inputKey}`;
     const consumedVars = allKnowledge.filter((k: any) =>
       (k.prolog || "").includes(`flow_var('${flowExecutionId}', '${consumedKey}',`));
-    const inputFacts = allKnowledge.filter((k: any) =>
-      (k.prolog || "").includes(`input('${flowExecutionId}', '${inputKey}'`));
+    const inputFacts = inputKey
+      ? allKnowledge.filter((k: any) =>
+          (k.prolog || "").includes(`input('${flowExecutionId}', '${inputKey}'`))
+      : allKnowledge.filter((k: any) =>
+          (k.prolog || "").includes(`input('${flowExecutionId}'`));
     // Wait if all inputs consumed
-    console.log(`[engine] pause chk stepId=${stepId} key=${inputKey} consumed=${consumedVars.length} inputs=${inputFacts.length} go=${consumedVars.length < inputFacts.length}`);
     if (consumedVars.length >= inputFacts.length) {
       await logToKnowledge(flowExecutionId, stepRunId, "pause_wait", "No new input, pausing", {});
       return { status: "paused" };
