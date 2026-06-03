@@ -289,13 +289,13 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
         const errMsg = validation.error.errors.map((e: any) => e.message).join(', ');
         await logToKnowledge(flowExecutionId, stepRunId, "payload_invalid",
           `payload_invalid('${stepId}', '${errMsg}').`, {});
-        return { output: { answer: `Request format error: ${errMsg}` }, next_step_id };
+        return { output: { answer: `Request format error: ${errMsg}` }, next_step_id: null };
       }
       parsedBody = validation.data as { goals: string[]; payload: Record<string, unknown> };
     } catch (e) {
       await logToKnowledge(flowExecutionId, stepRunId, "payload_invalid",
         `payload_invalid('${stepId}', 'Invalid JSON').`, {});
-      return { output: { answer: 'I received an invalid request format.' }, next_step_id };
+      return { output: { answer: 'I received an invalid request format.' }, next_step_id: null };
     }
     const actionResp = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsedBody) });
     const output = await actionResp.json().catch(() => ({}));
