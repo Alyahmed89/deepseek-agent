@@ -276,21 +276,28 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
     const rawBody = bodyMatch?.[1] || "{}";
     const resolvedBody = await resolveTags(rawBody, flowExecutionId, allKnowledge);
     await logToKnowledge(flowExecutionId, stepRunId, "action_start", `Calling ${method} ${url}`, { url, method, body: resolvedBody });
-    // Validate payload before sending
-    let parsedBody: any;
+    // Zod validation for execute_payload
+    const ExecutePayloadSchema = z.object({
+      goals: z.array(z.string()).min(1, 'goals must have at least one entry'),
+      payload: z.record(z.unknown()).optional().default({}),
+    });
+    let parsedBody: { goals: string[]; payload: Record<string, unknown> };
     try {
-      if (!resolvedBody || resolvedBody.trim() === "") throw new Error("empty body");
-      parsedBody = JSON.parse(resolvedBody);
-      if (parsedBody && typeof parsedBody === "object" && !Array.isArray(parsedBody)) {
-        if (!("goals" in parsedBody) || !Array.isArray(parsedBody.goals) || parsedBody.goals.length === 0)
-          throw new Error("goals array missing or empty");
+      const bodyObj = JSON.parse(resolvedBody || '{}');
+      const validation = ExecutePayloadSchema.safeParse(bodyObj);
+      if (!validation.success) {
+        const errMsg = validation.error.errors.map((e: any) => e.message).join(', ');
+        await logToKnowledge(flowExecutionId, stepRunId, "payload_invalid",
+          `payload_invalid('${stepId}', '${errMsg}').`, {});
+        return { output: { answer: `Request format error: ${errMsg}` }, next_step_id };
       }
-    } catch (err) {
-      const errMsg = String(err);
-      await logToKnowledge(flowExecutionId, stepRunId, "payload_invalid", `payload_invalid('${stepId}', '${errMsg}').`, {});
-      return { output: { error: errMsg, execute_payload: resolvedBody }, next_step_id: null };
+      parsedBody = validation.data as { goals: string[]; payload: Record<string, unknown> };
+    } catch (e) {
+      await logToKnowledge(flowExecutionId, stepRunId, "payload_invalid",
+        `payload_invalid('${stepId}', 'Invalid JSON').`, {});
+      return { output: { answer: 'I received an invalid request format.' }, next_step_id };
     }
-    const actionResp = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: resolvedBody });
+    const actionResp = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(parsedBody) });
     const output = await actionResp.json().catch(() => ({}));
     const expectedMatch = facts.match(/expected_response\([^,]+,\s*'([^']+)'\)/);
     if (expectedMatch?.[1]) {
@@ -320,14 +327,25 @@ export async function runStep(stepKnowledge: any, flowExecutionId: string, flowE
         (k.prolog || "").includes(`output_key(${stepAtom2},`));
       const outKeyMatch = outputKeyRow?.prolog?.match(/output_key\((\w+),\s*'([^']+)'\)/);
       const outputKey = outKeyMatch?.[2] || "";
-      const existingOutVars = allKnowledge.filter((k: any) =>
-        (k.prolog || "").includes(`flow_var('${flowExecutionId}', '${outputKey}',`));
-      const nextOutVersion = existingOutVars.length + 1;
-      const outputStr = typeof output === 'string' ? output : JSON.stringify(output);
-      await getSupabase().from("knowledge").insert({
-        id: randomUUID(),
-        prolog: `flow_var('${flowExecutionId}', '${outputKey}', ${nextOutVersion}, '${outputStr.replace(/'/g, "\\'")}').`,
-      });
+            // Store each output key as its own flow_var (not the whole dump)
+      const outputObj = (typeof output === 'object' && output !== null)
+        ? (output as Record<string, unknown>)
+        : { value: output };
+      for (const [key, val] of Object.entries(outputObj)) {
+        if (key === 'next_step_id') continue;
+        const safeKey = key.replace(/[^a-z0-9_]/gi, '_');
+        const valStr = (typeof val === 'object'
+          ? JSON.stringify(val)
+          : String(val ?? '')
+        ).replace(/'/g, "\\'");
+        const existingForKey = allKnowledge.filter((k: any) =>
+          (k.prolog || '').includes(`flow_var('${flowExecutionId}', '${safeKey}',`));
+        const keyVersion = existingForKey.length + 1;
+        await getSupabase().from("knowledge").insert({
+          id: randomUUID(),
+          prolog: `flow_var('${flowExecutionId}', '${safeKey}', ${keyVersion}, '${valStr}').`,
+        });
+      }
     } catch(e) { console.error("[engine] persist action output error:", e); }
     const nextMatch = facts.match(/step_output_next\([^,]+,\s*'?([^')]+)'?\)/);
     return { ...(Array.isArray(output) ? { rows: output } : output), next_step_id: nextMatch?.[1] || null };
